@@ -19,6 +19,7 @@ import { formatExpiry } from "../components/NidinConnectionStatus";
 import { copyText } from "../lib/clipboard";
 import { describeSharedLine, formatMoney } from "../lib/menu";
 import { navigateTo } from "../lib/navigation";
+import { platformLabel } from "../lib/platform";
 import { selectSessionId, toSessionSummary, upsertSessionSummary } from "../lib/sessions";
 import type { CartSessionDetail, CartSessionSummary, LeaderAuthStatus, SharedCartLine } from "../types";
 
@@ -143,7 +144,7 @@ export function AdminPage() {
         setStatusMessage(typeof body.detail === "string" ? body.detail : "刪單失敗，請稍後再試。");
         return;
       }
-      setStatusMessage(`已在 Nidin 刪除單號 ${orderId}。`);
+      setStatusMessage(`已在 ${platformLabel(selectedSessionDetail?.provider)} 刪除單號 ${orderId}。`);
       // 走 loadDetail 一併重讀收款狀態
       await loadDetail(sessionId);
     } catch {
@@ -343,7 +344,11 @@ export function AdminPage() {
           </label>
           <label className="field">
             <span>揪團連結</span>
-            <input value={groupBuyUrl} onChange={(event) => setGroupBuyUrl(event.target.value)} />
+            <input
+              placeholder="貼上 Nidin 或 Ocard 的揪團連結"
+              value={groupBuyUrl}
+              onChange={(event) => setGroupBuyUrl(event.target.value)}
+            />
           </label>
           <button className="action-button" onClick={() => void createSession()} disabled={isCreating}>
             {isCreating ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}
@@ -497,7 +502,8 @@ export function AdminPage() {
             <div className="cart-list">
               {selectedSessionDetail?.lines.map((line, index, all) => {
                 const orderId = line.official_order_id;
-                // 一張 Nidin 單可能有好幾杯，刪除鈕只放在第一杯；團長自己的飲料要到 Nidin 改
+                // 一張跟團單可能有好幾杯，刪除鈕只放在第一杯；Nidin 團長自己的飲料要到 Nidin 改。
+                // Ocard 只能撤回本站送出的單（後端對其他單會說明原因）
                 const deletable =
                   orderId && !orderId.startsWith("head:") && all.findIndex((l) => l.official_order_id === orderId) === index;
                 return (
@@ -513,7 +519,7 @@ export function AdminPage() {
                           type="button"
                           className="ghost-button ghost-button-text"
                           disabled={deletingOrderId !== null}
-                          title={`在 Nidin 刪掉 ${line.contributor_name} 這張跟團單`}
+                          title={`在 ${platformLabel(selectedSessionDetail.provider)} 刪掉 ${line.contributor_name} 這張跟團單`}
                           onClick={() =>
                             confirmingOrderId === orderId
                               ? void deleteFollowerOrder(selectedSessionDetail.session_id, orderId)

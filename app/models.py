@@ -146,12 +146,14 @@ class CartSessionLine(BaseModel):
     selections: list[CartLineSelection] = Field(default_factory=list)
     line_total: int = 0
     created_at: str
-    # 對應的 Nidin 跟團單號；None＝只存在本站。團長自己的飲料是 "head:…"
+    # 對應的平台跟團單號；None＝只存在本站。Nidin 團長自己的飲料是 "head:…"
     official_order_id: str | None = None
 
 
 class CartSessionSummary(BaseModel):
     session_id: str
+    # 這個團開在哪個平台；決定送單、同步、取消要找誰
+    provider: Literal["nidin", "ocard"] = "nidin"
     group_buy_url: str
     store_id: str
     group_buy_code: str

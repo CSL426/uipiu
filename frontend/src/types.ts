@@ -102,6 +102,8 @@ export interface NormalizedMenu {
 
 export interface CartSessionSummary {
   session_id: string;
+  /** 團開在哪個平台；舊資料沒有這個欄位＝Nidin */
+  provider?: "nidin" | "ocard";
   group_buy_url: string;
   store_id: string;
   group_buy_code: string;
@@ -134,7 +136,7 @@ export interface SharedCartLine {
   selections: SharedCartSelection[];
   line_total: number;
   created_at: string;
-  /** 對應的 Nidin 跟團單號；團長自己的飲料是 "head:…"；null＝只存在本站 */
+  /** 對應的平台跟團單號；Nidin 團長自己的飲料是 "head:…"；null＝只存在本站 */
   official_order_id?: string | null;
 }
 

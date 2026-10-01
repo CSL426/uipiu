@@ -4,6 +4,7 @@
 
 > **非官方專案。** 本專案為個人自用工具，與你訂（Nidin）及其營運公司沒有任何關聯，也未獲其授權或背書；「你訂」「Nidin」及各品牌名稱屬其權利人所有。
 > 本工具呼叫的是 Nidin 未公開的介面，可能隨時失效；使用者須自行遵守 Nidin 服務條款並承擔帳號風險。
+> 同樣也支援 Ocard 線上點（order.ocard.co）的揪團；與 Ocard 亦無任何關聯，呼叫的同樣是未公開介面。
 
 ---
 
@@ -28,6 +29,11 @@
    - 支援多人共同加入購物車（記名 contributor），集中彙整點單。
    - 支援一鍵將整車以訪客身分注入官方團購案中，主揪直接在官網刷卡結帳。
 
+5. **🧋 Ocard 線上點揪團**
+   - 後台貼上 Ocard 的揪團連結（`order.ocard.co/<品牌>/<分店>?group=<團碼>`）就能開團，不需要主揪的 Ocard 帳號。
+   - 大家在本站點的單以訪客身分加入 Ocard 的團（名字＝點單人），本站畫面同步 Ocard 上的跟團清單。
+   - 只能撤回從本站送出的單；團長自己或別人直接在 Ocard 點的單，請到 Ocard 處理。結帳一樣由團長在 Ocard 完成。
+
 ---
 
 ## 🏗 技術架構
@@ -45,6 +51,8 @@
 - `frontend/src/types.ts` 與 `lib/`：共用資料契約、規格計算與團購摘要等純函式；不反向依賴頁面或 UI 元件。
 - `frontend/src/styles.css`：明列樣式載入順序；各功能規則放在 `styles/`，避免在入口追加覆蓋。基礎樣式、功能樣式與既有響應式規則的先後關係由回歸測試保護。
 - `app/nidin/client.py`：HTTP 呼叫與送單流程；`normalizer.py`：上游資料正規化；`builder.py`：購物車驗證與送單 payload 建立。既有 `from app.nidin import ...` 入口保留。
+- `app/ocard/`：Ocard 的 HTTP 呼叫（`client.py`）與網址、菜單、跟團清單轉換（`normalizer.py`）。
+- `app/platforms.py`：送單、同步、取消在各平台實際怎麼做；`routers/live_orders.py` 只放本站自己的規則（防重送、取消憑證、節流、對帳），依團的 `provider` 找對應平台。
 
 ---
 
@@ -168,6 +176,7 @@ docker compose exec -T -w /tmp/nidin-tests -e PYTHONPATH=/app nidin-menu-parser 
 ---
 
 ## 📚 相關文件
+* Ocard 揪團介接（實測紀錄與決定）：[docs/specs/2026-10-01-ocard-group-ordering.md](docs/specs/2026-10-01-ocard-group-ordering.md)
 * 核心規格與 API 定義：[docs/specs/2026-09-17-agent-order-and-official-sync.md](docs/specs/2026-09-17-agent-order-and-official-sync.md)
 * 官方憑證自動配對規格：[docs/specs/2026-09-21-nidin-extension-pairing.md](docs/specs/2026-09-21-nidin-extension-pairing.md)
 * 憑證取得問題整理：[docs/specs/2026-09-21-nidin-credential-acquisition.md](docs/specs/2026-09-21-nidin-credential-acquisition.md)

@@ -160,6 +160,10 @@ class CartStore:
             if "owner_id" not in columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN owner_id TEXT")
 
+            if "provider" not in columns:
+                # 加這個欄位以前的團都是 Nidin
+                conn.execute("ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'nidin'")
+
             if "nidin_order_id" not in columns:
                 # 從「我的 Nidin 團購」匯入時記下 Nidin 團長單號，清單才知道哪些已經匯入過
                 conn.execute("ALTER TABLE sessions ADD COLUMN nidin_order_id TEXT")
@@ -170,6 +174,9 @@ class CartStore:
             if "pending_order_id" not in submission_columns:
                 # 結果不明時先記下 Nidin 跟團購物車的單號，同步時拿來對帳
                 conn.execute("ALTER TABLE order_submissions ADD COLUMN pending_order_id TEXT")
+            if "cancel_ref" not in submission_columns:
+                # 取消這張單要用的平台憑證（Ocard：這張跟團單專屬的裝置權杖）
+                conn.execute("ALTER TABLE order_submissions ADD COLUMN cancel_ref TEXT")
 
             payment_columns = {row["name"] for row in conn.execute("PRAGMA table_info(payments)")}
             if "paid_amount" not in payment_columns:
@@ -229,12 +236,14 @@ class CartStore:
             )
         return None
 
-    def mark_submission_uncertain(self, submission_id: str, pending_order_id: str | None) -> None:
+    def mark_submission_uncertain(
+        self, submission_id: str, pending_order_id: str | None, cancel_ref: str | None = None
+    ) -> None:
         with self._connect() as conn:
             conn.execute(
-                "UPDATE order_submissions SET status='pending', pending_order_id=?, "
-                "message='送出後沒有收到 Nidin 的確定結果', updated_at=? WHERE submission_id=?",
-                (pending_order_id, _now_iso(), submission_id),
+                "UPDATE order_submissions SET status='pending', pending_order_id=?, cancel_ref=COALESCE(?, cancel_ref), "
+                "message='送出後沒有收到平台的確定結果', updated_at=? WHERE submission_id=?",
+                (pending_order_id, cancel_ref, _now_iso(), submission_id),
             )
 
     def reconcile_submissions(self, session_id: str, present_order_ids: set[str], *, grace_seconds: float) -> None:
@@ -259,19 +268,25 @@ class CartStore:
                     )
                 elif (now - datetime.fromisoformat(row["updated_at"])).total_seconds() > grace_seconds:
                     conn.execute(
-                        "UPDATE order_submissions SET status='failed', message='對帳後 Nidin 上沒有這筆', updated_at=? "
+                        "UPDATE order_submissions SET status='failed', message='對帳後平台上沒有這筆', updated_at=? "
                         "WHERE submission_id=?",
                         (_now_iso(), row["submission_id"]),
                     )
 
     def finish_submission(
-        self, submission_id: str, *, status: str, official_order_id: str | None = None, message: str = ""
+        self,
+        submission_id: str,
+        *,
+        status: str,
+        official_order_id: str | None = None,
+        message: str = "",
+        cancel_ref: str | None = None,
     ) -> None:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE order_submissions SET status=?, official_order_id=COALESCE(?, official_order_id), "
-                "message=?, updated_at=? WHERE submission_id=?",
-                (status, official_order_id, message, _now_iso(), submission_id),
+                "cancel_ref=COALESCE(?, cancel_ref), message=?, updated_at=? WHERE submission_id=?",
+                (status, official_order_id, cancel_ref, message, _now_iso(), submission_id),
             )
 
     def submission_for_order(self, session_id: str, official_order_id: str) -> dict[str, str] | None:
@@ -381,6 +396,7 @@ class CartStore:
         menu: NormalizedMenu,
         delivery_summary: StoreDeliverySummary | None,
         owner_id: str | None = None,
+        provider: str = "nidin",
     ) -> CartSessionSummary:
         default_name = session_name.strip() if session_name and session_name.strip() else "未命名團購"
         validate_menu_snapshot(menu)
@@ -422,15 +438,15 @@ class CartStore:
                 """INSERT INTO sessions
                     (session_id, group_buy_url, store_id, group_buy_code, session_name,
                      store_name, delivery_minimum, delivery_description, order_status_reason,
-                     menu_json, menu_fetched_at, created_at, updated_at, owner_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     menu_json, menu_fetched_at, created_at, updated_at, owner_id, provider)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     session_id, group_buy_url, store_id, group_buy_code, default_name,
                     store_name,
                     delivery_summary.delivery_minimum if delivery_summary else None,
                     delivery_summary.delivery_description if delivery_summary else "",
                     delivery_summary.order_status_reason if delivery_summary else "",
-                    menu_json, now, now, now, owner_id,
+                    menu_json, now, now, now, owner_id, provider,
                 ),
             )
             row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (session_id,)).fetchone()
@@ -716,6 +732,7 @@ class CartStore:
             ).fetchone()
         return CartSessionSummary(
             session_id=row["session_id"],
+            provider=row["provider"],
             group_buy_url=row["group_buy_url"],
             store_id=row["store_id"],
             group_buy_code=row["group_buy_code"],
@@ -733,6 +750,7 @@ class CartStore:
     def _row_to_detail(self, row: sqlite3.Row, lines: list[CartSessionLine]) -> CartSessionDetail:
         return CartSessionDetail(
             session_id=row["session_id"],
+            provider=row["provider"],
             group_buy_url=row["group_buy_url"],
             store_id=row["store_id"],
             group_buy_code=row["group_buy_code"],

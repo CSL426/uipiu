@@ -16,9 +16,11 @@ interface ChatWidgetProps {
   selectedSessionId: string;
   contributorName: string;
   menu: NormalizedMenu | null;
-  /** 送進 Nidin；同一張預覽卡重按帶同一個 submissionId，後端才擋得住重複下單 */
+  /** 送進平台；同一張預覽卡重按帶同一個 submissionId，後端才擋得住重複下單 */
   onSubmitOrder: (submissionId: string, contributorName: string, lines: LiveOrderLine[]) => Promise<CartSessionDetail>;
   setStatusMessage: (message: string) => void;
+  /** 這個團所在的平台名稱，顯示在送出結果上 */
+  platformLabel?: string;
 }
 
 function formatChatTime(): string {
@@ -31,7 +33,14 @@ function extractQuickReplies(text: string): string[] {
   return match[1].split(/[,，、]/).map((s) => s.trim()).filter(Boolean);
 }
 
-export function ChatWidget({ selectedSessionId, contributorName, menu, onSubmitOrder, setStatusMessage }: ChatWidgetProps) {
+export function ChatWidget({
+  selectedSessionId,
+  contributorName,
+  menu,
+  onSubmitOrder,
+  setStatusMessage,
+  platformLabel = "Nidin",
+}: ChatWidgetProps) {
   const [chatInputText, setChatInputText] = useState("");
   const [isChatSubmitting, setIsChatSubmitting] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -168,12 +177,12 @@ export function ChatWidget({ selectedSessionId, contributorName, menu, onSubmitO
       const confirmBotMsg: ChatMessage = {
         id: createLineId(),
         sender: "bot",
-        text: `🎉 已送到 Nidin 的團裡（${preview.parsed_items.length} 筆，共 ${formatMoney(preview.total_price)}）。要改的話請在「本團訂單」取消這筆再重點。`,
+        text: `🎉 已送到 ${platformLabel} 的團裡（${preview.parsed_items.length} 筆，共 ${formatMoney(preview.total_price)}）。要改的話請在「本團訂單」取消這筆再重點。`,
         createdAt: formatChatTime(),
       };
       setChatMessages((prev) => [...prev, confirmBotMsg]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "送出失敗，這筆沒有送到 Nidin。";
+      const message = error instanceof Error ? error.message : `送出失敗，這筆沒有送到 ${platformLabel}。`;
       setStatusMessage(message);
       setChatMessages((prev) => [
         ...prev,
@@ -290,7 +299,7 @@ export function ChatWidget({ selectedSessionId, contributorName, menu, onSubmitO
                   <div className="preview-card-footer">
                     {msg.preview.confirmed ? (
                       <span className="preview-confirmed-badge">
-                        <CheckCircle2 size={14} /> 已送到 Nidin
+                        <CheckCircle2 size={14} /> 已送到 {platformLabel}
                       </span>
                     ) : msg.preview.cancelled ? (
                       <span className="preview-confirmed-badge" style={{ color: "var(--muted)" }}>

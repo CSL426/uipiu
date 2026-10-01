@@ -1,8 +1,10 @@
-"""點單即送進 Nidin：Nidin 的團購才是真相，本站只是替大家操作、再把狀態撈回來顯示。
+"""點單即送進平台（Nidin／Ocard）：平台上的團才是真相，本站只是替大家操作、再把狀態撈回來顯示。
 
-- 送單：每人一張 Nidin 跟團單（訪客身分、名字＝點單人），送成功才寫本站並標上 Nidin 單號。
-- 取消：跟團者送出後無法自己改單，只能由團長刪單；本站用主揪的 Nidin 憑證代刪。
-- 刷新：公開頁定期請後端用主揪憑證同步，大家看到的是 Nidin 上的實際內容。
+- 送單：每人一張跟團單（訪客身分、名字＝點單人），送成功才寫本站並標上平台單號。
+- 取消：Nidin 由本站拿主揪憑證以團長身分刪單；Ocard 用送單時那張單專屬的裝置權杖退團。
+- 刷新：公開頁定期請後端同步，大家看到的是平台上的實際內容。
+
+平台各自怎麼做在 app/platforms.py；這裡只放本站自己的規則（防重送、取消憑證、節流、對帳）。
 """
 
 from collections import deque
@@ -20,21 +22,20 @@ from app import auth as account_auth
 from app import credential_crypto
 from app import dependencies
 from app.auth import AuthUser
-from app.deps_shared import fetch_current_menu, initialize_legacy_ownership
 from app.models import CartSessionDetail, GuestOrderReceipt
 from app.nidin.builder import MenuChangedError, MenuDataError
 from app.nidin.client import NidinApiError
 from app.nidin.normalizer import _resolve_guest_phone
+from app.ocard import OcardApiError
+from app.platforms import Platform, platform_for_session, session_owner_user
 from app.routers.cart_sessions import AddCartLineDraftRequest
-from app.routers.leader_auth import call_with_nidin_relogin, fetch_official_info
 
 router = APIRouter()
 
-GROUP_OPEN = 10  # group_buying_status：10 揪團中、20 已截止
 REFRESH_INTERVAL_SECONDS = 10.0
-# 結果不明的送單超過這個時間、同步後在 Nidin 仍找不到，就判定沒成立
+# 結果不明的送單超過這個時間、同步後在平台上仍找不到，就判定沒成立
 UNCERTAIN_GRACE_SECONDS = 60.0
-# 公開、免登入就能真的在主揪的 Nidin 團下單；同一個來源 IP 10 分鐘最多 60 筆（辦公室共用 NAT 也夠用）
+# 公開、免登入就能真的在主揪的團下單；同一個來源 IP 10 分鐘最多 60 筆（辦公室共用 NAT 也夠用）
 SUBMIT_WINDOW_SECONDS = 600.0
 SUBMIT_LIMIT_PER_IP = 60
 _last_refresh: dict[str, float] = {}
@@ -46,7 +47,7 @@ _submit_lock = Lock()
 class SubmitOrderRequest(BaseModel):
     # 前端每按一次「送出」產生一個；逾時重試時沿用同一個，後端才認得出是同一筆
     submission_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    # Nidin 顯示時會截到 20 字
+    # Nidin 顯示時會截到 20 字；Ocard 沒說上限，以同樣長度為準
     contributor_name: str = Field(min_length=1, max_length=20)
     # 選填：給團長聯絡用。沒填就不送（Nidin 官網也是如此），不再替人亂編號碼
     contributor_phone: str = Field(default="", max_length=20)
@@ -56,7 +57,7 @@ class SubmitOrderRequest(BaseModel):
     @classmethod
     def require_real_name(cls, value: str) -> str:
         value = value.strip()
-        # 名字就是 Nidin 上這張跟團單的身分，也是本站收款、取消的依據；「訪客」會讓大家撞在一起
+        # 名字就是平台上這張跟團單的身分，也是本站收款、取消的依據；「訪客」會讓大家撞在一起
         if not value or value == "訪客":
             raise ValueError("請先填你的名字")
         return value
@@ -103,24 +104,17 @@ def _request_hash(session_id: str, payload: "SubmitOrderRequest") -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _definitely_not_sent(exc: BaseException) -> bool:
-    """送出 productCouponFlow 之後的失敗中，哪些確定沒有在 Nidin 成立。"""
-    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout, NidinApiError)):
-        return True
-    return isinstance(exc, httpx.HTTPStatusError) and 400 <= exc.response.status_code < 500
-
-
-def _not_sent_message(exc: BaseException) -> tuple[int, str]:
-    if isinstance(exc, NidinApiError):
-        return 409, f"Nidin 拒絕了這筆：{exc}"
+def _not_sent_message(exc: BaseException, label: str) -> tuple[int, str]:
+    if isinstance(exc, (NidinApiError, OcardApiError)):
+        return 409, f"{label} 拒絕了這筆：{exc}"
     if isinstance(exc, (MenuChangedError, MenuDataError)):
         return 409, str(exc)
     if isinstance(exc, HTTPException):
         return exc.status_code, str(exc.detail)
     if isinstance(exc, httpx.HTTPStatusError):
-        return 502, f"Nidin 回傳錯誤（HTTP {exc.response.status_code}），這筆沒有送出。"
+        return 502, f"{label} 回傳錯誤（HTTP {exc.response.status_code}），這筆沒有送出。"
     if isinstance(exc, httpx.HTTPError):
-        return 503, "連不上 Nidin，這筆還沒有送出。"
+        return 503, f"連不上 {label}，這筆還沒有送出。"
     if isinstance(exc, ValueError):
         return 422, str(exc)
     return 502, "送單前發生錯誤，這筆沒有送出。"
@@ -133,15 +127,6 @@ def _cancel_token(submission_id: str) -> str:
     return hmac.new(secret, submission_id.encode(), hashlib.sha256).hexdigest()
 
 
-def _session_owner(session_id: str) -> AuthUser:
-    initialize_legacy_ownership()
-    owner_id = dependencies.get_cart_store().session_owner(session_id)
-    owner = account_auth.get_user(owner_id) if owner_id else None
-    if owner is None:
-        raise HTTPException(status_code=409, detail="這個團沒有主揪，無法連到 Nidin。")
-    return owner
-
-
 def _get_session(session_id: str) -> CartSessionDetail:
     try:
         return dependencies.get_cart_store().get_session(session_id)
@@ -149,9 +134,9 @@ def _get_session(session_id: str) -> CartSessionDetail:
         raise HTTPException(status_code=404, detail="找不到這個團購。") from exc
 
 
-async def _sync_from_nidin(session: CartSessionDetail) -> CartSessionDetail:
+async def _sync_from_platform(session: CartSessionDetail, platform: Platform) -> CartSessionDetail:
     store = dependencies.get_cart_store()
-    official = await fetch_official_info(_session_owner(session.session_id), session.group_buy_code)
+    official = await platform.fetch_official(session)
     detail = store.merge_official_orders_to_lines(session.session_id, official)
     store.reconcile_submissions(
         session.session_id,
@@ -162,13 +147,13 @@ async def _sync_from_nidin(session: CartSessionDetail) -> CartSessionDetail:
 
 
 @router.post("/cart-sessions/{session_id}/orders", response_model=SubmitOrderResponse)
-async def submit_order_to_nidin(
+async def submit_order_to_platform(
     session_id: str, payload: SubmitOrderRequest, request: Request
 ) -> SubmitOrderResponse:
     account_auth.check_csrf(request)
     session = _get_session(session_id)
     store = dependencies.get_cart_store()
-    client = dependencies.get_nidin_client()
+    platform = platform_for_session(session)
 
     existing = store.begin_submission(
         payload.submission_id, session_id, payload.contributor_name, _request_hash(session_id, payload)
@@ -189,21 +174,19 @@ async def submit_order_to_nidin(
             raise HTTPException(status_code=409, detail="這筆已經取消了。要再點請重新下單。")
         raise HTTPException(
             status_code=409,
-            detail="上一筆還在跟 Nidin 確認中。請等一分鐘後按「重新整理」，確認 Nidin 上有沒有這筆再決定要不要重送。",
+            detail=f"上一筆還在跟 {platform.label} 確認中。請等一分鐘後按「重新整理」，確認 {platform.label} 上有沒有這筆再決定要不要重送。",
         )
     _limit_submissions(request)
 
     def fail(exc: BaseException) -> HTTPException:
-        status_code, message = _not_sent_message(exc)
+        status_code, message = _not_sent_message(exc, platform.label)
         store.finish_submission(payload.submission_id, status="failed", message=message)
         return HTTPException(status_code=status_code, detail=message)
 
-    # 送出前：這一段任何失敗都確定沒到 Nidin，標 failed 讓同一個 id 可以重試
+    # 送出前：這一段任何失敗都確定沒到平台，標 failed 讓同一個 id 可以重試
     try:
-        brief = await client.fetch_group_buy_brief(session.group_buy_code)
-        if brief.get("group_buying_status") != GROUP_OPEN:
-            raise HTTPException(status_code=409, detail="這個團在 Nidin 上已經截止，不能再點了。")
-        menu = await fetch_current_menu(client, session.store_id)
+        await platform.ensure_open(session)
+        menu = await platform.fetch_menu(session)
         store.replace_menu(session_id, menu)
         built = store.build_order_lines(
             session_id,
@@ -216,30 +199,32 @@ async def submit_order_to_nidin(
 
     progress: dict[str, object] = {}
     try:
-        receipt = await client.order_guest_cart_session(
-            group_buy_url=session.group_buy_url,
-            guest_name=payload.contributor_name,
-            guest_phone=payload.contributor_phone,
+        placed = await platform.submit(
+            session,
+            name=payload.contributor_name,
+            phone=payload.contributor_phone if platform.accepts_phone else "",
             lines=[line for line, _ in built],
             menu=menu,
             progress=progress,
         )
     except Exception as exc:
-        if progress.get("stage") != "commit" or _definitely_not_sent(exc):
+        if progress.get("stage") != "commit" or platform.definitely_not_sent(exc):
             raise fail(exc) from exc
-        # 已送出最後一步卻沒拿到可信結果：Nidin 可能已成立。記下跟團購物車單號，之後同步時對帳
+        # 已送出最後一步卻沒拿到可信結果：平台上可能已成立。記下跟團單號，之後同步時對帳
         pending_order_id = progress.get("cart_order_id")
         store.mark_submission_uncertain(payload.submission_id, str(pending_order_id) if pending_order_id else None)
         raise HTTPException(
             status_code=503,
-            detail="送出後沒有收到 Nidin 的確定結果，這筆可能已經成立。請等一分鐘後按「重新整理」確認，不要直接重點。",
+            detail=f"送出後沒有收到 {platform.label} 的確定結果，這筆可能已經成立。請等一分鐘後按「重新整理」確認，不要直接重點。",
         ) from exc
 
-    official_order_id = str(receipt.order_id)
-    store.finish_submission(payload.submission_id, status="submitted", official_order_id=official_order_id)
+    official_order_id = placed.official_order_id
+    store.finish_submission(
+        payload.submission_id, status="submitted", official_order_id=official_order_id, cancel_ref=placed.cancel_ref
+    )
     detail = store.record_order_lines(session_id, built, official_order_id=official_order_id)
     return SubmitOrderResponse(
-        receipt=receipt,
+        receipt=placed.receipt,
         official_order_id=official_order_id,
         cancel_token=_cancel_token(payload.submission_id),
         session=detail,
@@ -247,21 +232,22 @@ async def submit_order_to_nidin(
 
 
 @router.delete("/cart-sessions/{session_id}/orders/{official_order_id}", response_model=CartSessionDetail)
-async def cancel_order_on_nidin(
+async def cancel_order_on_platform(
     session_id: str,
     official_order_id: str,
     request: Request,
     x_cancel_token: str | None = Header(default=None),
     requester: AuthUser | None = Depends(account_auth.current_user),
 ) -> CartSessionDetail:
-    """點單本人（持送單時拿到的取消憑證）或主揪可以取消；實際動作是團長在 Nidin 刪掉這張跟團單。"""
+    """點單本人（持送單時拿到的取消憑證）或主揪可以取消；實際怎麼刪看平台。"""
     account_auth.check_csrf(request)
     session = _get_session(session_id)
+    platform = platform_for_session(session)
     if official_order_id.startswith("head:"):
-        raise HTTPException(status_code=400, detail="團長自己的飲料請到 Nidin 修改。")
+        raise HTTPException(status_code=400, detail=f"團長自己的飲料請到 {platform.label} 修改。")
 
     store = dependencies.get_cart_store()
-    owner = _session_owner(session_id)
+    owner = session_owner_user(session_id, platform.label)
     submission = store.submission_for_order(session_id, official_order_id)
     token_ok = bool(
         x_cancel_token
@@ -275,46 +261,32 @@ async def cancel_order_on_nidin(
     if not token_ok and (requester is None or requester.id != owner.id):
         raise HTTPException(status_code=403, detail="只有點這筆的人或主揪可以取消。")
     if submission is not None and submission["status"] == "cancelled":
-        # 已取消過就不要再拿主揪憑證去打 Nidin
+        # 已取消過就不要再拿主揪憑證去打平台
         raise HTTPException(status_code=409, detail="這筆已經取消了。")
 
-    client = dependencies.get_nidin_client()
     try:
-        head_order_id = store.nidin_order_id(session_id)
-        if not head_order_id:
-            head_order_id, _ = await call_with_nidin_relogin(
-                owner,
-                lambda token, user_id: client.fetch_head_order_id(
-                    token=token, user_id=user_id, group_buy_code=session.group_buy_code
-                ),
-            )
-            store.link_nidin_order(session_id, head_order_id)
-        await call_with_nidin_relogin(
-            owner,
-            lambda token, user_id: client.delete_follower_order(
-                token=token, user_id=user_id, head_order_id=head_order_id, follower_order_id=official_order_id
-            ),
-        )
-    except NidinApiError as exc:
-        raise HTTPException(status_code=409, detail=f"Nidin 沒有刪掉這筆：{exc}") from exc
+        await platform.cancel(session, official_order_id, submission.get("cancel_ref") if submission else None)
+    except (NidinApiError, OcardApiError) as exc:
+        raise HTTPException(status_code=409, detail=f"{platform.label} 沒有刪掉這筆：{exc}") from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail="連不上 Nidin，這筆還沒有取消。") from exc
+        raise HTTPException(status_code=503, detail=f"連不上 {platform.label}，這筆還沒有取消。") from exc
 
     if submission is not None:
         store.finish_submission(submission["submission_id"], status="cancelled")
     store.remove_official_order(session_id, official_order_id)
     try:
-        return await _sync_from_nidin(store.get_session(session_id))
-    except (HTTPException, NidinApiError, httpx.HTTPError):
-        # 已經在 Nidin 刪掉了；同步失敗只是暫時看不到最新狀態，不影響取消結果
+        return await _sync_from_platform(store.get_session(session_id), platform)
+    except (HTTPException, NidinApiError, OcardApiError, httpx.HTTPError):
+        # 已經在平台上刪掉了；同步失敗只是暫時看不到最新狀態，不影響取消結果
         return store.get_session(session_id)
 
 
 @router.post("/cart-sessions/{session_id}/refresh", response_model=RefreshSessionResponse)
-async def refresh_from_nidin(session_id: str, request: Request) -> RefreshSessionResponse:
-    """公開頁用：以主揪憑證把 Nidin 上的跟團單撈回來。同一團 10 秒內只真的同步一次。"""
+async def refresh_from_platform(session_id: str, request: Request) -> RefreshSessionResponse:
+    """公開頁用：把平台上的跟團單撈回來。同一團 10 秒內只真的同步一次。"""
     account_auth.check_csrf(request)
     session = _get_session(session_id)
+    platform = platform_for_session(session)
     now = time.monotonic()
     with _refresh_lock:
         last = _last_refresh.get(session_id)
@@ -322,8 +294,10 @@ async def refresh_from_nidin(session_id: str, request: Request) -> RefreshSessio
             return RefreshSessionResponse(session=session, synced=False)
         _last_refresh[session_id] = now
     try:
-        return RefreshSessionResponse(session=await _sync_from_nidin(session), synced=True)
+        return RefreshSessionResponse(session=await _sync_from_platform(session, platform), synced=True)
     except HTTPException as exc:
         return RefreshSessionResponse(session=session, synced=False, message=str(exc.detail))
-    except (NidinApiError, httpx.HTTPError):
-        return RefreshSessionResponse(session=session, synced=False, message="暫時連不上 Nidin，顯示的是上次同步的內容。")
+    except (NidinApiError, OcardApiError, httpx.HTTPError):
+        return RefreshSessionResponse(
+            session=session, synced=False, message=f"暫時連不上 {platform.label}，顯示的是上次同步的內容。"
+        )

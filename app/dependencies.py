@@ -10,6 +10,7 @@
 from app.agent_parser import AgentParser
 from app.cart_store import CartStore
 from app.nidin import NidinClient
+from app.ocard import OcardClient
 
 cart_store = CartStore()
 agent_parser = AgentParser()
@@ -25,3 +26,7 @@ def get_agent_parser() -> AgentParser:
 
 def get_nidin_client() -> NidinClient:
     return NidinClient()
+
+
+def get_ocard_client() -> OcardClient:
+    return OcardClient()

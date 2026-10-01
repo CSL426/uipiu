@@ -21,13 +21,14 @@ import {
   newSubmissionId,
   readContributorName,
   readContributorPhone,
-  refreshFromNidin,
+  refreshFromPlatform,
   saveContributorName,
   saveContributorPhone,
   submitLiveOrder,
   type LiveOrderLine,
 } from "../lib/liveOrder";
 import { stopSpeaking } from "../lib/speech";
+import { acceptsPhone, platformLabel } from "../lib/platform";
 import { selectSessionId, toSessionSummary, upsertSessionSummary } from "../lib/sessions";
 import type {
   CartLine,
@@ -44,7 +45,7 @@ export function PublicPage() {
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [selectedSessionDetail, setSelectedSessionDetail] = useState<CartSessionDetail | null>(null);
   const [menu, setMenu] = useState<NormalizedMenu | null>(null);
-  // 名字就是 Nidin 上這張跟團單的身分；記在瀏覽器，下次不用重填
+  // 名字就是平台上這張跟團單的身分；記在瀏覽器，下次不用重填
   const [contributorName, setContributorName] = useState(readContributorName);
   const [contributorPhone, setContributorPhone] = useState(readContributorPhone);
   const [search, setSearch] = useState("");
@@ -58,7 +59,7 @@ export function PublicPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [myOrders, setMyOrders] = useState<Record<string, string>>({});
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
-  // 同一批暫存內容重按「送出」沿用同一個 submission_id：逾時後重按不會在 Nidin 下第二次
+  // 同一批暫存內容重按「送出」沿用同一個 submission_id：逾時後重按不會在平台上下第二次
   const draftSubmission = useRef<{ lineIds: string; id: string } | null>(null);
   // 非同步結果回來時只套用到「還是同一團」的畫面；送單/取消後遞增，讓更早發出的刷新結果作廢
   const currentSessionRef = useRef("");
@@ -66,6 +67,9 @@ export function PublicPage() {
   const deferredSearch = useDeferredValue(search);
 
   const activeItem = menu?.items.find((item) => item.id === activeItemId) ?? null;
+  const selectedProvider = (selectedSessionDetail ?? sessions.find((s) => s.session_id === selectedSessionId))?.provider;
+  const platform = platformLabel(selectedProvider);
+  const phoneEnabled = acceptsPhone(selectedProvider);
 
   function cloneLineToDraft(line: SharedCartLine) {
     stopSpeaking();
@@ -189,24 +193,24 @@ export function PublicPage() {
     setSessions((current) => upsertSessionSummary(current, toSessionSummary(detail)));
   }
 
-  async function syncFromNidin(sessionId: string) {
+  async function syncFromPlatform(sessionId: string) {
     const versionAtStart = stateVersion.current;
-    const result = await refreshFromNidin(sessionId);
+    const result = await refreshFromPlatform(sessionId);
     // 刷新途中有人送單或取消：這份刷新比較舊，套上去會把剛送出的單抹掉
     if (result && stateVersion.current === versionAtStart) applySessionDetail(result.session);
   }
 
-  // Nidin 才是真相：開著頁面時定期撈回來（後端同一團 10 秒內只真的同步一次）
+  // 平台上的團才是真相：開著頁面時定期撈回來（後端同一團 10 秒內只真的同步一次）
   useEffect(() => {
     currentSessionRef.current = selectedSessionId;
     if (!selectedSessionId) return;
     setMyOrders(myOrderTokens(selectedSessionId));
-    void syncFromNidin(selectedSessionId);
+    void syncFromPlatform(selectedSessionId);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void syncFromNidin(selectedSessionId);
+      if (document.visibilityState === "visible") void syncFromPlatform(selectedSessionId);
     }, 20000);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void syncFromNidin(selectedSessionId);
+      if (document.visibilityState === "visible") void syncFromPlatform(selectedSessionId);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -215,12 +219,12 @@ export function PublicPage() {
     };
   }, [selectedSessionId]);
 
-  async function submitToNidin(
+  async function submitToPlatform(
     submissionId: string,
     name: string,
     lines: LiveOrderLine[],
   ): Promise<CartSessionDetail> {
-    const result = await submitLiveOrder(selectedSessionId, submissionId, name, lines, contributorPhone);
+    const result = await submitLiveOrder(selectedSessionId, submissionId, name, lines, phoneEnabled ? contributorPhone : "");
     stateVersion.current += 1;
     applySessionDetail(result.session);
     setMyOrders(myOrderTokens(selectedSessionId));
@@ -228,8 +232,8 @@ export function PublicPage() {
     setCartTab("orders");
     setStatusMessage(
       result.already_submitted
-        ? `這筆之前已經送到 Nidin 了（單號 ${result.official_order_id}），不會重複下單。`
-        : `已送到 Nidin，單號 ${result.official_order_id}。`,
+        ? `這筆之前已經送到 ${platform} 了（單號 ${result.official_order_id}），不會重複下單。`
+        : `已送到 ${platform}，單號 ${result.official_order_id}。`,
     );
     return result.session;
   }
@@ -242,7 +246,7 @@ export function PublicPage() {
       stateVersion.current += 1;
       applySessionDetail(detail);
       setMyOrders(myOrderTokens(selectedSessionId));
-      setStatusMessage(`已在 Nidin 取消單號 ${officialOrderId}。`);
+      setStatusMessage(`已在 ${platform} 取消單號 ${officialOrderId}。`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "取消失敗。");
     } finally {
@@ -271,7 +275,7 @@ export function PublicPage() {
       return;
     }
     if (!contributorName.trim() || contributorName.trim() === "訪客") {
-      setStatusMessage("先填你的名字，它會是你在 Nidin 上這筆單的名字。");
+      setStatusMessage(`先填你的名字，它會是你在 ${platform} 上這筆單的名字。`);
       return;
     }
     if (cartLines.length === 0) {
@@ -281,14 +285,16 @@ export function PublicPage() {
 
     const submittedIds = new Set(cartLines.map((line) => line.id));
     // 納入團與名字：同一批暫存換團或改名後再送，就是另一筆
-    const lineKey = [selectedSessionId, contributorName.trim(), contributorPhone.trim(), ...[...submittedIds].sort()].join(",");
+    const lineKey = [
+      selectedSessionId, contributorName.trim(), phoneEnabled ? contributorPhone.trim() : "", ...[...submittedIds].sort(),
+    ].join(",");
     if (draftSubmission.current?.lineIds !== lineKey) {
       draftSubmission.current = { lineIds: lineKey, id: newSubmissionId("cart") };
     }
 
     setIsSubmitting(true);
     try {
-      await submitToNidin(
+      await submitToPlatform(
         draftSubmission.current.id,
         contributorName,
         cartLines.map((line) => ({
@@ -301,7 +307,7 @@ export function PublicPage() {
       setCartLines((current) => current.filter((line) => !submittedIds.has(line.id)));
       closeComposer();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "送出失敗，這筆沒有送到 Nidin。");
+      setStatusMessage(error instanceof Error ? error.message : `送出失敗，這筆沒有送到 ${platform}。`);
     } finally {
       setIsSubmitting(false);
     }
@@ -375,7 +381,7 @@ export function PublicPage() {
             <span>名字</span>
             <input
               value={contributorName}
-              placeholder="你的名字（會顯示在 Nidin 上）"
+              placeholder={`你的名字（會顯示在 ${platform} 上）`}
               maxLength={20}
               onChange={(event) => {
                 setContributorName(event.target.value);
@@ -384,6 +390,7 @@ export function PublicPage() {
             />
           </label>
 
+          {phoneEnabled ? (
           <label className="field">
             <span>電話（選填）</span>
             <input
@@ -397,12 +404,13 @@ export function PublicPage() {
               }}
             />
           </label>
+          ) : null}
 
           <button
             className="action-button"
             onClick={() => {
               void refreshSessions(selectedSessionId).then(() => {
-                if (selectedSessionId) void syncFromNidin(selectedSessionId);
+                if (selectedSessionId) void syncFromPlatform(selectedSessionId);
               });
             }}
             disabled={isLoading}
@@ -455,7 +463,8 @@ export function PublicPage() {
             contributorName={contributorName}
             menu={menu}
             setStatusMessage={setStatusMessage}
-            onSubmitOrder={submitToNidin}
+            onSubmitOrder={submitToPlatform}
+            platformLabel={platform}
           />
         </motion.div>
 

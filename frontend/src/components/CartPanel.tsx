@@ -17,7 +17,7 @@ interface CartPanelProps {
   onRemoveLine: (lineId: string) => void;
   onSubmitOrder: () => void;
   onCloneLine: (line: SharedCartLine) => void;
-  /** 這台瀏覽器送出過的 Nidin 單號（有取消憑證） */
+  /** 這台瀏覽器送出過的平台單號（有取消憑證） */
   myOrderIds?: ReadonlySet<string>;
   cancellingOrderId?: string | null;
   onCancelOrder?: (officialOrderId: string) => void;
@@ -40,7 +40,7 @@ export function CartPanel({
   cancellingOrderId = null,
   onCancelOrder,
 }: CartPanelProps) {
-  // 一張 Nidin 單可能有好幾杯；取消鈕只放在該單第一杯，免得看起來能單杯取消
+  // 一張跟團單可能有好幾杯；取消鈕只放在該單第一杯，免得看起來能單杯取消
   const firstLineOfOrder = new Set<string>();
   const seenOrders = new Set<string>();
   for (const line of selectedSessionDetail?.lines ?? []) {
@@ -230,7 +230,11 @@ export function CartPanel({
                             className="clone-order-btn"
                             disabled={cancellingOrderId !== null}
                             onClick={() => onCancelOrder?.(line.official_order_id as string)}
-                            title="請團長在 Nidin 刪掉你這筆（送出後無法自己改單）"
+                            title={
+                              selectedSessionSummary?.provider === "ocard"
+                                ? "從 Ocard 的團裡撤回你這筆"
+                                : "請團長在 Nidin 刪掉你這筆（送出後無法自己改單）"
+                            }
                           >
                             {cancellingOrderId === line.official_order_id ? <LoaderCircle size={12} className="spin" /> : <X size={12} />}
                             <span>取消這筆</span>

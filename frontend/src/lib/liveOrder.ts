@@ -1,8 +1,8 @@
 /**
- * 點單即送 Nidin 的前端介面。
+ * 點單即送平台（Nidin／Ocard）的前端介面。
  *
- * 送出後 Nidin 上的跟團單就是真相；本站畫面靠 refresh 撈回來。取消只能由團長在 Nidin 刪單，
- * 後端代刪時要驗證「是不是點這筆的人」——憑證是送單時後端發的 cancel_token，只存在點單人的瀏覽器。
+ * 送出後平台上的跟團單就是真相；本站畫面靠 refresh 撈回來。取消由後端代為執行（Nidin 以團長身分刪單、
+ * Ocard 退團），後端要驗證「是不是點這筆的人」——憑證是送單時後端發的 cancel_token，只存在點單人的瀏覽器。
  */
 import type { CartSessionDetail, GuestOrderReceipt } from "../types";
 
@@ -73,7 +73,7 @@ function saveText(key: string, value: string): void {
 
 export const readContributorName = () => readText(NAME_KEY);
 export const saveContributorName = (name: string) => saveText(NAME_KEY, name);
-/** 選填，給團長聯絡用；沒填就不送到 Nidin */
+/** 選填，給團長聯絡用；沒填就不送（Ocard 團沒有電話欄位，一律不送） */
 export const readContributorPhone = () => readText(PHONE_KEY);
 export const saveContributorPhone = (phone: string) => saveText(PHONE_KEY, phone);
 
@@ -98,7 +98,7 @@ function forgetOrder(sessionId: string, orderId: string): void {
 async function detailOf(response: Response, fallback: string): Promise<string> {
   const body = (await response.json().catch(() => ({}))) as { detail?: unknown };
   if (typeof body.detail === "string") return body.detail;
-  // 沒有後端說明的 5xx 多半是代理逾時（nginx 502/504）：請求可能已經在 Nidin 成立
+  // 沒有後端說明的 5xx 多半是代理逾時（nginx 502/504）：請求可能已經在平台上成立
   if (response.status >= 500) return UNCERTAIN_MESSAGE;
   if (Array.isArray(body.detail)) {
     const first = body.detail[0] as { msg?: string } | undefined;
@@ -132,7 +132,7 @@ export async function submitLiveOrder(
     throw new Error(UNCERTAIN_MESSAGE);
   }
   if (!response.ok) {
-    throw new Error(await detailOf(response, "送出失敗，這筆沒有送到 Nidin。"));
+    throw new Error(await detailOf(response, "送出失敗，這筆沒有送出。"));
   }
   const result = (await response.json()) as SubmitOrderResult;
   rememberOrder(sessionId, result.official_order_id, result.cancel_token);
@@ -152,7 +152,7 @@ export async function cancelLiveOrder(sessionId: string, officialOrderId: string
   return (await response.json()) as CartSessionDetail;
 }
 
-export async function refreshFromNidin(sessionId: string): Promise<RefreshResult | null> {
+export async function refreshFromPlatform(sessionId: string): Promise<RefreshResult | null> {
   try {
     const response = await fetch(`/api/cart-sessions/${sessionId}/refresh`, { method: "POST" });
     if (!response.ok) return null;

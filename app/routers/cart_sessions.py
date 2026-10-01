@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timezone
 import sqlite3
 
@@ -9,7 +8,6 @@ from pydantic import BaseModel, Field
 from app import dependencies
 from app.auth import AuthUser, require_user
 from app.deps_shared import (
-    build_default_session_name,
     fetch_current_menu,
     initialize_legacy_ownership,
     require_session_owner,
@@ -24,9 +22,10 @@ from app.models import (
 from app.nidin import (
     MenuChangedError,
     MenuDataError,
-    extract_group_buy_target,
     validate_cart_lines,
 )
+from app.ocard import OcardApiError
+from app.platforms import platform_for_session, platform_for_url
 
 router = APIRouter()
 
@@ -90,28 +89,8 @@ async def list_cart_sessions() -> list[CartSessionSummary]:
 async def create_session_from_group_buy_url(
     group_buy_url: str, session_name: str, owner_id: str
 ) -> CartSessionSummary:
-    """後台貼連結開團與「從 Nidin 匯入」共用；同一個團已存在就回傳既有的。"""
-    target = extract_group_buy_target(group_buy_url)
-    client = dependencies.get_nidin_client()
-    group_buy_brief, menu, delivery_summary = await asyncio.gather(
-        client.fetch_group_buy_brief(target.group_buy_code),
-        client.fetch_menu(target.store_id),
-        client.fetch_store_delivery_summary(target.store_id),
-    )
-    return dependencies.get_cart_store().create_or_get_session(
-        group_buy_url=group_buy_url,
-        store_id=target.store_id,
-        group_buy_code=target.group_buy_code,
-        session_name=build_default_session_name(
-            explicit_name=session_name,
-            group_buy_brief=group_buy_brief,
-            menu=menu,
-            delivery_summary=delivery_summary,
-        ),
-        menu=menu,
-        delivery_summary=delivery_summary,
-        owner_id=owner_id,
-    )
+    """後台貼連結開團與「從 Nidin 匯入」共用；同一個團已存在就回傳既有的。連結決定是哪個平台。"""
+    return await platform_for_url(group_buy_url).create_session(group_buy_url, session_name, owner_id)
 
 
 @router.post("/cart-sessions", response_model=CartSessionSummary)
@@ -128,6 +107,10 @@ async def create_cart_session(
         raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OcardApiError as exc:
+        raise HTTPException(status_code=502, detail=f"Ocard 回應異常：{exc}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="連不上點餐平台，請稍後再試。") from exc
 
 
 @router.get("/cart-sessions/{session_id}", response_model=CartSessionDetail)
@@ -145,8 +128,9 @@ async def get_cart_session_menu(session_id: str) -> CartSessionMenu:
         session = store.get_session(session_id)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+    platform = platform_for_session(session)
     try:
-        menu = await fetch_current_menu(dependencies.get_nidin_client(), session.store_id)
+        menu = await platform.fetch_menu(session)
     except HTTPException as exc:
         if exc.status_code != 503:
             raise
@@ -154,7 +138,7 @@ async def get_cart_session_menu(session_id: str) -> CartSessionMenu:
             return store.get_menu(session_id)
         except (ValueError, KeyError) as cache_exc:
             raise HTTPException(
-                503, "Nidin 暫時無法連線，且沒有可用的上次菜單。請稍後重試。",
+                503, f"{platform.label} 暫時無法連線，且沒有可用的上次菜單。請稍後重試。",
             ) from cache_exc
     try:
         return store.replace_menu(session_id, menu)
@@ -204,6 +188,8 @@ async def submit_cart_session_guest_order(
     try:
         store = dependencies.get_cart_store()
         session = store.get_session(session_id)
+        if session.provider != "nidin":
+            raise ValueError("這個團請用公開頁送單。")
         # 已經在 Nidin 上的（同步回來或新流程送出的）不能再送一次
         local_lines = [line for line in session.lines if line.official_order_id is None]
         if not local_lines:

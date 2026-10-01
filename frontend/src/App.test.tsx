@@ -229,6 +229,52 @@ describe("App", () => {
     );
   });
 
+  it("names Ocard for an Ocard group and never sends a phone number there", async () => {
+    const ocardSummary = {
+      ...emptySessionSummary,
+      provider: "ocard",
+      group_buy_url: "https://order.ocard.co/teabrand/Store01?group=GRP0001",
+      store_id: "teabrand/Store01",
+      group_buy_code: "GRP0001",
+    };
+    // 之前在 Nidin 團留過電話：換到 Ocard 團也不能送出去
+    localStorage.setItem("nidin_contributor_phone", "0912345678");
+    const fetchMock = createFetchMock((input, init) => {
+      const url = String(input);
+      if (url === "/api/cart-sessions") return { ok: true, json: async () => [ocardSummary] };
+      if (url === "/api/cart-sessions/session-1/menu") return { ok: true, json: async () => menuResponse };
+      if (url === "/api/cart-sessions/session-1") return { ok: true, json: async () => ({ ...ocardSummary, lines: [] }) };
+      if (url === "/api/cart-sessions/session-1/refresh") return { ok: false, json: async () => ({}) };
+      if (url === "/api/cart-sessions/session-1/orders" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            receipt: null,
+            official_order_id: "ORDNEW01",
+            cancel_token: "cancel-secret",
+            session: { ...ocardSummary, lines: [] },
+            already_submitted: false,
+          }),
+        };
+      }
+      return null;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: /中●阿薩姆紅茶/ });
+    expect(screen.queryByPlaceholderText("團長聯絡用，不填也可以")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /中●阿薩姆紅茶/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "加入購物車" }));
+    fireEvent.change(screen.getByPlaceholderText("你的名字（會顯示在 Ocard 上）"), { target: { value: "小美" } });
+    fireEvent.click(screen.getByRole("button", { name: "送出訂單" }));
+
+    await screen.findByText("已送到 Ocard，單號 ORDNEW01。");
+    const [, init] = fetchMock.mock.calls.find(([url]) => String(url) === "/api/cart-sessions/session-1/orders")!;
+    expect(JSON.parse(String(init?.body)).contributor_phone).toBe("");
+  });
+
   it("does not let a slow, older refresh wipe an order that was just sent", async () => {
     localStorage.setItem("nidin_contributor_name", "小明");
     const mine = { ...filledSessionDetail, lines: [{ ...filledSessionDetail.lines[0], official_order_id: "305443999" }] };
