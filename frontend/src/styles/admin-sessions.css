@@ -1,0 +1,115 @@
+.workspace-admin {
+  grid-template-columns: 320px minmax(0, 1fr) 360px;
+}
+
+.session-stack {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.session-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  text-align: left;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.session-card span {
+  color: var(--muted);
+}
+
+.session-card-active {
+  border-color: rgba(185, 75, 47, 0.36);
+  background: rgba(185, 75, 47, 0.08);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+}
+
+.summary-card span {
+  color: var(--muted);
+}
+
+.summary-card strong {
+  font-size: 1.2rem;
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+}
+
+/* 「我在 Nidin 開的團」匯入清單 */
+.nidin-import {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.nidin-import-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.nidin-import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+
+.nidin-import-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+}
+
+.nidin-import-info {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.nidin-import-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nidin-import-muted {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.nidin-import-error {
+  color: var(--danger, #ef4444);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}

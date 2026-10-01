@@ -1,0 +1,103 @@
+.field,
+.field-row {
+  display: grid;
+  gap: 8px;
+}
+
+.field {
+  margin-top: 14px;
+}
+
+.field span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.field input,
+.field-select,
+.search-box input,
+.field-quantity input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.field-row {
+  grid-template-columns: 1fr 1fr;
+}
+
+.action-button,
+.submit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 20px;
+  color: #fff8f2;
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  transition: transform 160ms ease, box-shadow 160ms ease;
+  box-shadow: 0 12px 24px rgba(116, 47, 31, 0.22);
+}
+
+.action-button:hover,
+.submit-button:hover {
+  transform: translateY(-1px);
+}
+
+.action-button:disabled,
+.submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.receipt-card {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(23, 100, 65, 0.16);
+  background: rgba(23, 100, 65, 0.08);
+  color: var(--success);
+}
+
+.receipt-card p {
+  margin: 10px 0 0;
+}
+
+.receipt-badge {
+  margin-bottom: 8px;
+}
+
+.receipt-lines {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(23, 100, 65, 0.2);
+}
+
+.receipt-lines p {
+  margin: 8px 0 0;
+}
+
+.delivery-card {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(48, 26, 17, 0.12);
+  background: rgba(48, 26, 17, 0.04);
+}
+
+.delivery-card p {
+  margin: 10px 0 0;
+  line-height: 1.6;
+}
+
+.helper-text {
+  color: var(--muted);
+  font-size: 0.92rem;
+}

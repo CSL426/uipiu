@@ -1,0 +1,10 @@
+.menu-cache-notice {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--text);
+  background: var(--accent-soft);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}

@@ -1,0 +1,1 @@
+"""Nidin menu parser service."""

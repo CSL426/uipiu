@@ -1,0 +1,92 @@
+services:
+  data-init:
+    image: nidin-menu-parser:local
+    user: "0:0"
+    command: ["python", "-c", "import os; os.chown('/app/app/data', 1000, 1000)"]
+    volumes:
+      - ./app/data:/app/app/data
+    restart: "no"
+
+  nidin-menu-parser:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    image: nidin-menu-parser:local
+    container_name: nidin-menu-parser
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+    environment:
+      NIDIN_MENU_API_BASE_URL: ${NIDIN_MENU_API_BASE_URL:-https://loctw-service-api.nidin.shop/shopper/v2}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      NIDIN_ADMIN_USERNAME: ${NIDIN_ADMIN_USERNAME:-admin}
+      NIDIN_ADMIN_PASSWORD: ${NIDIN_ADMIN_PASSWORD:-}
+      NIDIN_OWNER_PHONE: ${NIDIN_OWNER_PHONE:-}
+      NIDIN_CREDENTIAL_KEY: ${NIDIN_CREDENTIAL_KEY:-}
+      NIDIN_COOKIE_SECURE: ${NIDIN_COOKIE_SECURE:-false}
+      CART_DB_PATH: /app/app/data/cart.db
+    expose:
+      - "8000"
+    volumes:
+      - ./app/data:/app/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runner
+    image: nidin-menu-frontend:local
+    container_name: nidin-menu-frontend
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.31-alpine
+    container_name: nidin-menu-parser-nginx
+    depends_on:
+      nidin-menu-parser:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    environment:
+      DOLLAR: "$"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "${PORT:-6464}:80"
+    restart: unless-stopped
+
+  backend-test:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tester
+    image: nidin-menu-parser-test:local
+    environment:
+      CART_DB_PATH: /tmp/nidin-tests/cart.db
+    tmpfs:
+      - /tmp
+
+  frontend-test:
+    profiles: [test]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: tester
+    image: nidin-menu-frontend-test:local

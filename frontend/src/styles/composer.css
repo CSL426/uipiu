@@ -1,0 +1,80 @@
+.composer-backdrop {
+  position: fixed;
+  inset: 0;
+  padding: 20px;
+  display: grid;
+  place-items: center;
+  background: rgba(42, 20, 14, 0.44);
+  backdrop-filter: blur(12px);
+}
+
+.composer {
+  width: min(860px, calc(100vw - 24px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 22px;
+  border-radius: 28px;
+}
+
+.composer-heading h3 {
+  margin: 0;
+}
+
+.composer-hero {
+  margin-top: 18px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: rgba(48, 26, 17, 0.06);
+}
+
+.composer-hero img {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+}
+
+.field-quantity {
+  max-width: 120px;
+}
+
+.group-stack {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.option-chip {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+}
+
+.option-chip span:last-child {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.option-chip-active {
+  border-color: rgba(185, 75, 47, 0.5);
+  background: rgba(185, 75, 47, 0.12);
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}

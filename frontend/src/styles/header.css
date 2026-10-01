@@ -1,0 +1,77 @@
+/* Compact App Header */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.875rem 1.5rem;
+  margin-bottom: 1.25rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.header-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+}
+
+.brand-badge {
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.header-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.header-status-pill {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.825rem;
+  line-height: 1.4;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.header-metric .metric-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.header-metric .metric-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent-deep);
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+}

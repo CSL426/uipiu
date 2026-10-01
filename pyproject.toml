@@ -1,0 +1,15 @@
+[project]
+name = "nidin-menu-parser"
+version = "0.1.0"
+description = "FastAPI service for parsing Nidin menus and text orders"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "httpx",
+    "pydantic",
+    "uvicorn",
+    "watchfiles",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

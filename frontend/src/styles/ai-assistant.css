@@ -1,0 +1,31 @@
+/* AI Order Assistant */
+.ai-box {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+}
+
+.ai-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: #fffdf9;
+  color: var(--text);
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+.ai-bubble {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  border-left: 0.25rem solid var(--accent);
+}

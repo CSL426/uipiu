@@ -1,0 +1,23 @@
+/* Keep this explicit order: shared foundations precede feature rules, and the
+   workspace breakpoints stay after their base layout. Login owns its breakpoint.
+   Add rules to the owning module; do not append overrides to this entry point.
+   Unlayered imports preserve the existing cascade and inline-style precedence. */
+@import "./styles/foundation.css";
+@import "./styles/forms-and-feedback.css";
+@import "./styles/menu.css";
+@import "./styles/cart.css";
+@import "./styles/composer.css";
+@import "./styles/admin-sessions.css";
+@import "./styles/workspace-responsive.css";
+@import "./styles/ai-assistant.css";
+@import "./styles/admin-tools.css";
+@import "./styles/item-controls.css";
+@import "./styles/group-orders.css";
+@import "./styles/quick-actions.css";
+@import "./styles/header.css";
+@import "./styles/order-summary.css";
+@import "./styles/custom-select.css";
+@import "./styles/chat.css";
+@import "./styles/menu-notice.css";
+@import "./styles/compact-buttons.css";
+@import "./styles/login.css";

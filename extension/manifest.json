@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Nidin 團購點餐站 憑證連結（非官方）",
+  "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvBwyCEBNoRp+h1ZjUAduIdba4AD0dA7mL+3+3Un53vGeP508+Pm8ahz0mibXwMtbYwt9LwlAr22bWb8MAHNyEz+cYA24yJadFXLYMfu0fsQDIb7WGL/mBF8Zy953kDT+oBceYFRwTMss0R1TbAT38tYuIDx3jBDpp2nD2v4dPQkhhAkWhchFAHP4z9b3GYBwEQtQL59ibewJIkBxNK7g7FXH0brGoMs10zBbyM/MjRpgUic3zbWa3sk0R9cMZB2ZPsvq+YY4x89HFLx0+rhiV4VChVFpQRiQAYrTu/VpfT3UWN0IbPTG5CiZnlEdr96INl9VVZodNdYwlLNVNWQBswIDAQAB",
+  "description": "非你訂官方產品。協助把你在 order.nidin.shop 的登入憑證連結到自架的團購點餐後台，免手動複製或開 F12。",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://order.nidin.shop/*"
+  ],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://order.nidin.shop/*"
+      ],
+      "js": [
+        "dist/nidin-content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:6464/*",
+      "http://127.0.0.1:6464/*",
+      "http://localhost:5173/*",
+      "http://127.0.0.1:5173/*",
+      "http://localhost:8000/*",
+      "http://127.0.0.1:8000/*"
+    ]
+  }
+}

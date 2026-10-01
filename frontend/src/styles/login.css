@@ -1,0 +1,97 @@
+/* Host edit card inside QR side */
+.host-config-card {
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+  text-align: left;
+  width: 100%;
+  max-width: 22rem;
+  box-sizing: border-box;
+}
+
+.host-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.host-edit-row {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
+.host-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--panel-strong);
+  color: var(--text);
+  outline: none;
+}
+
+.host-edit-input:focus {
+  border-color: var(--accent);
+}
+
+/* Login Split Layout (Password + QR together) */
+.login-card {
+  width: 100%;
+  max-width: 52rem;
+  margin: 2rem auto;
+  padding: 2.25rem;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  box-sizing: border-box;
+}
+
+.login-split-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 2.5rem;
+  align-items: start;
+  margin-top: 1.5rem;
+}
+
+.login-form-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.login-qr-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  border-left: 1px solid var(--line);
+  padding-left: 2.5rem;
+}
+
+@media (max-width: 48rem) {
+  .login-card {
+    padding: 1.25rem;
+    margin: 1rem auto;
+  }
+  .login-split-grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  .login-qr-side {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    padding-left: 0;
+    padding-top: 2rem;
+  }
+}

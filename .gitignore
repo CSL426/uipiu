@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.pyre/
+.tox/
+.nox/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Packaging
+build/
+dist/
+*.egg-info/
+node_modules/
+.vite/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Local runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.pid
+*.tmp
+tmp/
+
+# Logs
+*.log
+firebase-debug.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local compose overrides
+compose.override.yaml
+compose.override.yml
+docker-compose.override.yml
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
+
+# Regenerable menu samples and private runtime state
+/data/menus/
+/app/data/
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+
+# TypeScript build output
+*.tsbuildinfo
+/frontend/vite.config.js
+/frontend/vite.config.d.ts
+
+# Local agent settings, browser traces, and worktrees
+/.claude/
+/.playwright-mcp/
+/.worktree/

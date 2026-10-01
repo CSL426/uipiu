@@ -1,0 +1,15 @@
+# 沿用 gitleaks 預設規則，只放行逐一確認過的誤判；不要整個檔案或整條規則放行
+[extend]
+useDefault = true
+
+[allowlist]
+description = "已確認的誤判"
+regexes = [
+  # Chrome 擴充功能 manifest 的 "key" 是 RSA 公鑰（SubjectPublicKeyInfo，固定以這段開頭），
+  # 用途是固定 unpacked 擴充功能的 ID，本來就公開；私鑰從未保存
+  # （allowlist 預設比對抓出來的值本身，不是整行，所以不能帶 "key": 前綴）
+  '''^MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA[A-Za-z0-9+/=]+$''',
+  # 測試用的假憑證
+  '''tok-123456789''',
+  '''tok_1234567890''',
+]

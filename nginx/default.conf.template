@@ -1,0 +1,82 @@
+# X-Forwarded-For 用 $remote_addr 覆寫、不附加：後端以它判斷來源 IP 做登入與送單限流，
+# 附加用戶端自帶的值等於讓人偽造 IP 繞過限流。
+# ngrok / Cloudflare Tunnel 等前置 TLS 終端會帶 X-Forwarded-Proto: https；
+# 沿用它，否則後端以為自己是 http，比對 Origin 時會把自己的請求當跨站擋掉
+map ${DOLLAR}http_x_forwarded_proto ${DOLLAR}forwarded_proto {
+    default ${DOLLAR}http_x_forwarded_proto;
+    ""      ${DOLLAR}scheme;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    location = /health {
+        proxy_pass http://nidin-menu-parser:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+        proxy_set_header Connection "";
+    }
+
+    location /api/ {
+        proxy_pass http://nidin-menu-parser:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+        proxy_set_header Connection "";
+    }
+
+    location /menus/ {
+        proxy_pass http://nidin-menu-parser:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+        proxy_set_header Connection "";
+    }
+
+    location /guest/ {
+        proxy_pass http://nidin-menu-parser:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+        proxy_set_header Connection "";
+    }
+
+    location /resolve-store {
+        proxy_pass http://nidin-menu-parser:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+        proxy_set_header Connection "";
+    }
+
+    location /parse-order {
+        proxy_pass http://nidin-menu-parser:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+        proxy_set_header Connection "";
+    }
+
+    location / {
+        proxy_pass http://frontend:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+    }
+}
