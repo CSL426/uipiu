@@ -13,6 +13,7 @@ import hmac
 import json
 from threading import Lock
 import time
+from typing import Callable
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 import httpx
@@ -82,11 +83,15 @@ class RefreshSessionResponse(BaseModel):
     message: str | None = None
 
 
-def _limit_submissions(request: Request) -> None:
-    peer = request.client.host if request.client else "unknown"
+def _peer(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _limit_submissions(bucket: str) -> None:
+    """bucket：公開頁用來源 IP；外部 agent 用自己的 API key，不和其他人共用額度。"""
     now = time.monotonic()
     with _submit_lock:
-        attempts = _submits_by_ip.setdefault(peer, deque())
+        attempts = _submits_by_ip.setdefault(bucket, deque())
         while attempts and attempts[0] <= now - SUBMIT_WINDOW_SECONDS:
             attempts.popleft()
         if len(attempts) >= SUBMIT_LIMIT_PER_IP:
@@ -151,15 +156,26 @@ async def submit_order_to_platform(
     session_id: str, payload: SubmitOrderRequest, request: Request
 ) -> SubmitOrderResponse:
     account_auth.check_csrf(request)
+    return await place_order(session_id, payload, rate_bucket=_peer(request))
+
+
+async def place_order(
+    session_id: str, payload: SubmitOrderRequest, *, rate_bucket: str, api_key_id: str | None = None
+) -> SubmitOrderResponse:
+    """公開頁與外部 agent 共用的送單流程。api_key_id 記下是哪把 key 送的，之後只有它能撤回。"""
     session = _get_session(session_id)
     store = dependencies.get_cart_store()
     platform = platform_for_session(session)
 
     existing = store.begin_submission(
-        payload.submission_id, session_id, payload.contributor_name, _request_hash(session_id, payload)
+        payload.submission_id,
+        session_id,
+        payload.contributor_name,
+        _request_hash(session_id, payload),
+        api_key_id=api_key_id,
     )
     if existing is not None:
-        if existing["conflict"]:
+        if existing["conflict"] or (existing.get("api_key_id") or None) != api_key_id:
             raise HTTPException(
                 status_code=409, detail="這個送單編號已經用在別的內容上了。請重新整理頁面後再送。"
             )
@@ -176,7 +192,7 @@ async def submit_order_to_platform(
             status_code=409,
             detail=f"上一筆還在跟 {platform.label} 確認中。請等一分鐘後按「重新整理」，確認 {platform.label} 上有沒有這筆再決定要不要重送。",
         )
-    _limit_submissions(request)
+    _limit_submissions(rate_bucket)
 
     def fail(exc: BaseException) -> HTTPException:
         status_code, message = _not_sent_message(exc, platform.label)
@@ -241,6 +257,29 @@ async def cancel_order_on_platform(
 ) -> CartSessionDetail:
     """點單本人（持送單時拿到的取消憑證）或主揪可以取消；實際怎麼刪看平台。"""
     account_auth.check_csrf(request)
+
+    def allowed(submission: dict[str, str] | None, owner: AuthUser) -> bool:
+        token_ok = bool(
+            x_cancel_token
+            and submission is not None
+            # 轉成 bytes 比對：compare_digest 遇到非 ASCII 的 str 會丟 TypeError
+            and hmac.compare_digest(
+                x_cancel_token.encode("utf-8", "surrogatepass"),
+                _cancel_token(submission["submission_id"]).encode(),
+            )
+        )
+        return token_ok or (requester is not None and requester.id == owner.id)
+
+    return await cancel_order(session_id, official_order_id, allowed=allowed)
+
+
+async def cancel_order(
+    session_id: str,
+    official_order_id: str,
+    *,
+    allowed: Callable[[dict[str, str] | None, AuthUser], bool],
+) -> CartSessionDetail:
+    """allowed(送單紀錄, 主揪) 決定呼叫者能不能取消這筆；公開頁看取消憑證，外部 agent 看 API key。"""
     session = _get_session(session_id)
     platform = platform_for_session(session)
     if official_order_id.startswith("head:"):
@@ -249,16 +288,7 @@ async def cancel_order_on_platform(
     store = dependencies.get_cart_store()
     owner = session_owner_user(session_id, platform.label)
     submission = store.submission_for_order(session_id, official_order_id)
-    token_ok = bool(
-        x_cancel_token
-        and submission is not None
-        # 轉成 bytes 比對：compare_digest 遇到非 ASCII 的 str 會丟 TypeError
-        and hmac.compare_digest(
-            x_cancel_token.encode("utf-8", "surrogatepass"),
-            _cancel_token(submission["submission_id"]).encode(),
-        )
-    )
-    if not token_ok and (requester is None or requester.id != owner.id):
+    if not allowed(submission, owner):
         raise HTTPException(status_code=403, detail="只有點這筆的人或主揪可以取消。")
     if submission is not None and submission["status"] == "cancelled":
         # 已取消過就不要再拿主揪憑證去打平台
@@ -285,6 +315,10 @@ async def cancel_order_on_platform(
 async def refresh_from_platform(session_id: str, request: Request) -> RefreshSessionResponse:
     """公開頁用：把平台上的跟團單撈回來。同一團 10 秒內只真的同步一次。"""
     account_auth.check_csrf(request)
+    return await refresh_session(session_id)
+
+
+async def refresh_session(session_id: str) -> RefreshSessionResponse:
     session = _get_session(session_id)
     platform = platform_for_session(session)
     now = time.monotonic()

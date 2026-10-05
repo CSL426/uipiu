@@ -71,6 +71,19 @@ server {
         proxy_set_header Connection "";
     }
 
+    # 外部 agent 的 MCP（streamable HTTP）。路徑原樣轉給後端；不緩衝，SSE 回應才不會卡住
+    location = /mcp {
+        proxy_pass http://nidin-menu-parser:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${DOLLAR}http_host;
+        proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-For ${DOLLAR}remote_addr;
+        proxy_set_header X-Forwarded-Proto ${DOLLAR}forwarded_proto;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 120s;
+    }
+
     location / {
         proxy_pass http://frontend:80;
         proxy_http_version 1.1;

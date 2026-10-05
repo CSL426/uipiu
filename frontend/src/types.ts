@@ -186,3 +186,21 @@ export interface NidinGroupBuyImport {
   session: CartSessionDetail;
   sync_error: string | null;
 }
+
+export type ApiKeyScope = "order" | "leader";
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  scope: ApiKeyScope;
+  /** key 的最後四碼，讓主揪認得是哪一把 */
+  hint: string;
+  created_at: number;
+  last_used_at?: number | null;
+  revoked: boolean;
+}
+
+export interface CreatedApiKey extends ApiKeyInfo {
+  /** 只在建立時回傳這一次 */
+  key: string;
+}

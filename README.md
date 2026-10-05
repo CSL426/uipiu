@@ -34,6 +34,12 @@
    - 大家在本站點的單以訪客身分加入 Ocard 的團（名字＝點單人），本站畫面同步 Ocard 上的跟團清單。
    - 只能撤回從本站送出的單；團長自己或別人直接在 Ocard 點的單，請到 Ocard 處理。結帳一樣由團長在 Ocard 完成。
 
+6. **🤖 給外部 agent 用的 MCP**
+   - 主揪在管理頁「外部 agent 的 API key」發 key：**點單**（查團、看菜單、點單、撤回自己的單）或**主揪**（再加上開團、撤回團裡任何一筆、標記收款）。key 只顯示一次。
+   - agent 連 `https://<你的網域>/mcp`（MCP streamable HTTP），帶 `Authorization: Bearer <key>`。工具：`list_groups`、`get_menu`、`place_order`、`list_orders`、`cancel_order`、`open_group`、`set_paid`。
+   - Claude Code 例：`claude mcp add --transport http mynig https://<你的網域>/mcp --header "Authorization: Bearer <key>"`
+   - 送單走和公開頁同一條流程（防重送、Nidin／Ocard 皆可）；每把 key 各自限流。REST 文件在 `/api/docs`。
+
 ---
 
 ## 🏗 技術架構
@@ -52,6 +58,7 @@
 - `frontend/src/styles.css`：明列樣式載入順序；各功能規則放在 `styles/`，避免在入口追加覆蓋。基礎樣式、功能樣式與既有響應式規則的先後關係由回歸測試保護。
 - `app/nidin/client.py`：HTTP 呼叫與送單流程；`normalizer.py`：上游資料正規化；`builder.py`：購物車驗證與送單 payload 建立。既有 `from app.nidin import ...` 入口保留。
 - `app/ocard/`：Ocard 的 HTTP 呼叫（`client.py`）與網址、菜單、跟團清單轉換（`normalizer.py`）。
+- `app/agent_tools.py`：外部 agent 能做的事（權限檢查在這裡）；`app/mcp_server.py` 把它們包成 MCP 工具，`app/api_keys.py` 管 key。
 - `app/platforms.py`：送單、同步、取消在各平台實際怎麼做；`routers/live_orders.py` 只放本站自己的規則（防重送、取消憑證、節流、對帳），依團的 `provider` 找對應平台。
 
 ---
@@ -176,6 +183,7 @@ docker compose exec -T -w /tmp/nidin-tests -e PYTHONPATH=/app nidin-menu-parser 
 ---
 
 ## 📚 相關文件
+* 給外部 agent 的 MCP 介面：[docs/specs/2026-10-05-agent-mcp.md](docs/specs/2026-10-05-agent-mcp.md)
 * Ocard 揪團介接（實測紀錄與決定）：[docs/specs/2026-10-01-ocard-group-ordering.md](docs/specs/2026-10-01-ocard-group-ordering.md)
 * 核心規格與 API 定義：[docs/specs/2026-09-17-agent-order-and-official-sync.md](docs/specs/2026-09-17-agent-order-and-official-sync.md)
 * 官方憑證自動配對規格：[docs/specs/2026-09-21-nidin-extension-pairing.md](docs/specs/2026-09-21-nidin-extension-pairing.md)

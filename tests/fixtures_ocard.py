@@ -1,5 +1,7 @@
 """Ocard 實測回應（2026-10-01）的去識別化節錄：菜單只留三項，團的名字、團碼、地點換成假的。"""
 
+from app.ocard import normalize_menu, parse_group_url
+
 OCARD_PRODUCTS = [{'name': '【人氣精選\u3000Popular Items】',
   'id': 'LDKMdR',
   'items': [{'name': '熟成紅茶',
@@ -669,3 +671,6 @@ OCARD_GROUP = {
         },
     ],
 }
+
+OCARD_TARGET = parse_group_url(OCARD_GROUP_URL)
+OCARD_MENU = normalize_menu(OCARD_TARGET, "測試茶行 測試店", OCARD_PRODUCTS, OCARD_ITEM_DETAILS)

@@ -174,6 +174,9 @@ class CartStore:
             if "pending_order_id" not in submission_columns:
                 # 結果不明時先記下 Nidin 跟團購物車的單號，同步時拿來對帳
                 conn.execute("ALTER TABLE order_submissions ADD COLUMN pending_order_id TEXT")
+            if "api_key_id" not in submission_columns:
+                # 外部 agent 送的單記下是哪把 key，之後只有同一把 key（或主揪）能撤回
+                conn.execute("ALTER TABLE order_submissions ADD COLUMN api_key_id TEXT")
             if "cancel_ref" not in submission_columns:
                 # 取消這張單要用的平台憑證（Ocard：這張跟團單專屬的裝置權杖）
                 conn.execute("ALTER TABLE order_submissions ADD COLUMN cancel_ref TEXT")
@@ -208,7 +211,13 @@ class CartStore:
     # status：pending 送出中或結果不明（逾時）、submitted 已成立、failed 確定沒送出、cancelled 已取消
 
     def begin_submission(
-        self, submission_id: str, session_id: str, contributor_name: str, request_hash: str
+        self,
+        submission_id: str,
+        session_id: str,
+        contributor_name: str,
+        request_hash: str,
+        *,
+        api_key_id: str | None = None,
     ) -> dict[str, str] | None:
         """登記一次送單。已登記過就回傳既有紀錄（不重送），否則回 None。
 
@@ -227,12 +236,13 @@ class CartStore:
                 return existing
             conn.execute(
                 "INSERT INTO order_submissions "
-                "(submission_id, session_id, contributor_name, status, official_order_id, message, created_at, updated_at, request_hash, pending_order_id) "
-                "VALUES (?, ?, ?, 'pending', NULL, '', ?, ?, ?, NULL) "
+                "(submission_id, session_id, contributor_name, status, official_order_id, message, created_at, updated_at, "
+                "request_hash, pending_order_id, api_key_id) "
+                "VALUES (?, ?, ?, 'pending', NULL, '', ?, ?, ?, NULL, ?) "
                 "ON CONFLICT(submission_id) DO UPDATE SET status='pending', message='', session_id=excluded.session_id, "
                 "contributor_name=excluded.contributor_name, request_hash=excluded.request_hash, "
-                "pending_order_id=NULL, updated_at=excluded.updated_at",
-                (submission_id, session_id, contributor_name, now, now, request_hash),
+                "pending_order_id=NULL, api_key_id=excluded.api_key_id, updated_at=excluded.updated_at",
+                (submission_id, session_id, contributor_name, now, now, request_hash, api_key_id),
             )
         return None
 

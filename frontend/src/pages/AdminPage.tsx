@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ApiKeysPanel } from "../components/ApiKeysPanel";
 import { LeaderAuthModal } from "../components/LeaderAuthModal";
 import { NidinGroupBuyImporter } from "../components/NidinGroupBuyImporter";
 import { formatExpiry } from "../components/NidinConnectionStatus";
@@ -369,6 +370,7 @@ export function AdminPage() {
               onOpen={(sessionId) => void loadDetail(sessionId)}
             />
           ) : null}
+          <ApiKeysPanel />
         </motion.div>
 
         <motion.div

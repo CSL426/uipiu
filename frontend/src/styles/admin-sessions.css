@@ -113,3 +113,38 @@
   font-size: 0.8rem;
   margin: 0 0 0.5rem;
 }
+
+/* 外部 agent 的 API key：沿用上方 nidin-import 的列表樣式，只補表單與一次性顯示的 key */
+.agent-keys-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.6fr) auto;
+  align-items: end;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.agent-keys-reveal {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--panel-strong);
+}
+
+.agent-keys-secret {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.agent-keys-revoked {
+  opacity: 0.55;
+}
+
+@media (max-width: 40rem) {
+  .agent-keys-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

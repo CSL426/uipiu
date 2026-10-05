@@ -3,7 +3,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -38,3 +37,35 @@ def authenticated_manager(monkeypatch):
     yield
     app.dependency_overrides.pop(auth.require_user, None)
     app.dependency_overrides.pop(auth.current_user, None)
+
+
+@pytest.fixture
+def isolated_store(monkeypatch, tmp_path):
+    """乾淨的 CartStore，並清掉 Ocard 菜單快取、刷新節流與送單限流的行程內狀態。"""
+    from app.cart_store import CartStore
+    from app.ocard import clear_menu_cache
+    from app.routers import live_orders
+
+    monkeypatch.setattr("app.dependencies.cart_store", CartStore(tmp_path / "cart.db"))
+    live_orders._last_refresh.clear()
+    live_orders._submits_by_ip.clear()
+    clear_menu_cache()
+
+
+@pytest.fixture
+def ocard_session_id(authenticated_manager, isolated_store):
+    """一個開在 Ocard 的團（測試資料見 tests/fixtures_ocard.py）。"""
+    from app import auth
+    from app.dependencies import cart_store
+    from tests.fixtures_ocard import OCARD_MENU, OCARD_TARGET
+
+    return cart_store.create_or_get_session(
+        group_buy_url=OCARD_TARGET.url,
+        store_id=OCARD_TARGET.session_store_id,
+        group_buy_code=OCARD_TARGET.group_code,
+        session_name="測試",
+        menu=OCARD_MENU.menu,
+        delivery_summary=None,
+        owner_id=auth.first_admin_id(),
+        provider="ocard",
+    ).session_id

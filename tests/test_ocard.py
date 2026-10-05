@@ -7,31 +7,26 @@ from urllib.parse import parse_qsl
 import httpx
 import pytest
 
-from app import auth as account_auth
-from app.cart_store import CartStore
 from app.main import app
 from app.models import validate_menu_snapshot
 from app.ocard import (
     OcardApiError,
     OcardClient,
     check_exclusions,
-    clear_menu_cache,
     normalize_group,
-    normalize_menu,
     parse_group_url,
 )
-from app.routers import live_orders
 from tests.fixtures_ocard import (
     OCARD_GROUP,
     OCARD_GROUP_URL,
-    OCARD_ITEM_DETAILS,
+    OCARD_MENU,
     OCARD_PRODUCTS,
+    OCARD_TARGET,
 )
 
 pytestmark = pytest.mark.usefixtures("authenticated_manager")
 
-TARGET = parse_group_url(OCARD_GROUP_URL)
-OCARD_MENU = normalize_menu(TARGET, "測試茶行 測試店", OCARD_PRODUCTS, OCARD_ITEM_DETAILS)
+TARGET = OCARD_TARGET
 MENU = OCARD_MENU.menu
 
 
@@ -143,26 +138,13 @@ async def test_non_success_code_is_an_api_error_with_ocards_message():
 
 
 @pytest.fixture(autouse=True)
-def isolate(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    monkeypatch.setattr("app.dependencies.cart_store", CartStore(tmp_path / "cart.db"))
-    live_orders._last_refresh.clear()
-    clear_menu_cache()
+def isolate(isolated_store):
+    pass
 
 
 @pytest.fixture
-def session_id(authenticated_manager, isolate):
-    from app.dependencies import cart_store
-
-    return cart_store.create_or_get_session(
-        group_buy_url=TARGET.url,
-        store_id=TARGET.session_store_id,
-        group_buy_code=TARGET.group_code,
-        session_name="測試",
-        menu=MENU,
-        delivery_summary=None,
-        owner_id=account_auth.first_admin_id(),
-        provider="ocard",
-    ).session_id
+def session_id(ocard_session_id):
+    return ocard_session_id
 
 
 def _ocard(**overrides):
