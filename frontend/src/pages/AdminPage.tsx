@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiKeysPanel } from "../components/ApiKeysPanel";
 import { LeaderAuthModal } from "../components/LeaderAuthModal";
 import { NidinGroupBuyImporter } from "../components/NidinGroupBuyImporter";
+import { NidinStoreSearch } from "../components/NidinStoreSearch";
 import { formatExpiry } from "../components/NidinConnectionStatus";
 import { copyText } from "../lib/clipboard";
 import { describeSharedLine, formatMoney } from "../lib/menu";
@@ -46,6 +47,8 @@ export function AdminPage() {
   const [paidContributors, setPaidContributors] = useState<Record<string, boolean>>({});
   // 刪 Nidin 跟團單無法復原：第一次按只進入確認狀態，第二次才真的刪
   const [confirmingOrderId, setConfirmingOrderId] = useState<string | null>(null);
+  // 從本站移除團也是第一次按只進入確認
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [isSavingPayment, setIsSavingPayment] = useState(false);
   const detailRequest = useRef(0);
@@ -289,6 +292,32 @@ export function AdminPage() {
     }
   }
 
+  async function removeSelectedSession() {
+    if (!selectedSessionDetail) return;
+    const { session_id: sessionId, session_name: sessionName } = selectedSessionDetail;
+    if (confirmingRemoveId !== sessionId) {
+      setConfirmingRemoveId(sessionId);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/cart-sessions/${sessionId}`, { method: "DELETE" });
+      const payload = (await response.json().catch(() => ({}))) as { detail?: unknown };
+      if (!response.ok) {
+        throw new Error(typeof payload.detail === "string" ? payload.detail : "移除失敗。");
+      }
+      setSelectedSessionDetail(null);
+      setSessions((current) => current.filter((session) => session.session_id !== sessionId));
+      setStatusMessage(`已從本站移除 ${sessionName}（平台上的團不受影響）。`);
+      await refreshSessions();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "移除失敗。");
+    } finally {
+      setConfirmingRemoveId(null);
+      setIsLoading(false);
+    }
+  }
+
   function copyOrderSummary() {
     if (!selectedSessionDetail || selectedSessionDetail.lines.length === 0) return;
     const linesText = selectedSessionDetail.lines.map((l) => describeSharedLine(l)).join("\n");
@@ -355,6 +384,15 @@ export function AdminPage() {
             {isCreating ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}
             建立購物車
           </button>
+          {leaderAuth?.is_authenticated ? (
+            <NidinStoreSearch
+              onOpened={(session) => {
+                setSessions((current) => upsertSessionSummary(current, toSessionSummary(session)));
+                void loadDetail(session.session_id);
+                setStatusMessage(`已在 Nidin 開團並加進本站：${session.session_name}。`);
+              }}
+            />
+          ) : null}
           {leaderAuth?.is_authenticated ? (
             <NidinGroupBuyImporter
               onImported={(session, syncError) => {
@@ -457,6 +495,18 @@ export function AdminPage() {
                 >
                   <Trash2 size={16} />
                   <span>清空已收單</span>
+                </button>
+              ) : null}
+
+              {selectedSessionDetail ? (
+                <button
+                  className="ghost-button ghost-button-text"
+                  onClick={() => void removeSelectedSession()}
+                  disabled={isLoading}
+                  title="只從本站移除，平台上的團和已送出的單不受影響"
+                >
+                  <X size={16} />
+                  <span>{confirmingRemoveId === selectedSessionDetail.session_id ? "確定移除？" : "從本站移除"}</span>
                 </button>
               ) : null}
             </div>

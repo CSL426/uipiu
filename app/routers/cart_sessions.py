@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
 import sqlite3
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 import httpx
 from pydantic import BaseModel, Field
 
+from app import auth as account_auth
 from app import dependencies
 from app.auth import AuthUser, require_user
 from app.deps_shared import (
@@ -119,6 +120,21 @@ async def get_cart_session(session_id: str) -> CartSessionDetail:
         return dependencies.get_cart_store().get_session(session_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/cart-sessions/{session_id}")
+async def delete_cart_session(
+    session_id: str,
+    request: Request,
+    user: AuthUser = Depends(require_session_owner),
+) -> dict[str, bool]:
+    """從本站移除這個團（例如平台上已失效）。平台上的團和已送出的單不受影響。"""
+    account_auth.check_csrf(request)
+    try:
+        dependencies.get_cart_store().delete_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(404, "找不到這個團購。") from exc
+    return {"deleted": True}
 
 
 @router.get("/cart-sessions/{session_id}/menu", response_model=CartSessionMenu)

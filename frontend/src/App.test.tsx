@@ -376,6 +376,34 @@ describe("App", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "刪除這筆" })).not.toBeInTheDocument());
   });
 
+  it("removes a group from this site only after confirming", async () => {
+    window.history.replaceState({}, "", "/admin");
+    let removed = false;
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/auth/me") return { ok: true, json: async () => ({ id: 1, username: "leader", is_admin: false }) };
+      if (url.endsWith("/payments")) return { ok: true, json: async () => ({}) };
+      if (url === "/api/leader/auth") return { ok: true, json: async () => ({ is_authenticated: false }) };
+      if (url === "/api/admin/cart-sessions") return { ok: true, json: async () => (removed ? [] : [emptySessionSummary]) };
+      if (url === "/api/cart-sessions/session-1" && init?.method === "DELETE") {
+        removed = true;
+        return { ok: true, json: async () => ({ deleted: true }) };
+      }
+      if (url === "/api/cart-sessions/session-1") return { ok: true, json: async () => ({ ...emptySessionSummary, lines: [] }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "從本站移除" }));
+    expect(fetchSpy).not.toHaveBeenCalledWith("/api/cart-sessions/session-1", { method: "DELETE" });
+    fireEvent.click(screen.getByRole("button", { name: "確定移除？" }));
+
+    await screen.findByText("已從本站移除 50嵐 瑞光店（平台上的團不受影響）。");
+    expect(fetchSpy).toHaveBeenCalledWith("/api/cart-sessions/session-1", { method: "DELETE" });
+  });
+
   it("creates a new cart session from the admin page and shows its summary", async () => {
     window.history.replaceState({}, "", "/admin");
 

@@ -17,7 +17,7 @@ from app.models import CartSessionDetail, NormalizedMenu
 from app.nidin.client import NidinApiError
 from app.ocard import OcardApiError
 from app.platforms import platform_for_session
-from app.routers import live_orders
+from app.routers import live_orders, nidin_group_buys
 from app.routers.cart_sessions import (
     AddCartLineDraftRequest,
     create_session_from_group_buy_url,
@@ -251,3 +251,41 @@ async def set_paid(principal: ApiKeyPrincipal, group_id: str, name: str, paid: b
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
     return {"name": name, "paid": bool(payments.get(name))}
+
+
+def _owner(principal: ApiKeyPrincipal):
+    from app import auth as account_auth
+
+    user = account_auth.get_user(principal.owner_id)
+    if user is None:
+        raise ToolError("發這把 key 的主揪帳號已經不存在。")
+    return user
+
+
+async def find_stores(principal: ApiKeyPrincipal, brand: str, sort: str = "distance") -> dict[str, Any]:
+    if not principal.is_leader:
+        raise ToolError("這把 key 只有點單權限，不能開團。")
+    if sort not in ("distance", "rating"):
+        raise ToolError("sort 只能是 distance（最近）或 rating（評分相對高）。")
+    try:
+        result = await nidin_group_buys.search_stores(_owner(principal), brand, sort)
+    except HTTPException as exc:
+        raise ToolError(_detail(exc)) from exc
+    return result.model_dump()
+
+
+async def open_new_group(principal: ApiKeyPrincipal, store_id: str) -> dict[str, Any]:
+    if not principal.is_leader:
+        raise ToolError("這把 key 只有點單權限，不能開團。")
+    try:
+        imported = await nidin_group_buys.open_group_at_store(_owner(principal), store_id)
+    except HTTPException as exc:
+        raise ToolError(_detail(exc)) from exc
+    session = imported.session
+    return {
+        "group_id": session.session_id,
+        "platform": "Nidin",
+        "name": session.session_name,
+        "link": session.group_buy_url,
+        "delivery_minimum": session.delivery_minimum,
+    }

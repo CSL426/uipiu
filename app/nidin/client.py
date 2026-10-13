@@ -332,6 +332,71 @@ class NidinClient:
             user_id=user_id,
         )
 
+    async def list_brands(self) -> list[dict[str, Any]]:
+        """全部品牌（公開）。"""
+        async with self._get_client() as client:
+            response = await client.get(f"{self.base_url}/brands", headers=self._headers())
+            response.raise_for_status()
+        return [brand for brand in response.json().get("brands") or [] if isinstance(brand, dict)]
+
+    async def list_brand_stores(self, brand_id: int | str) -> list[dict[str, Any]]:
+        """品牌的所有分店（公開），含座標、評分與營業狀態。"""
+        async with self._get_client() as client:
+            response = await client.get(f"{self.base_url}/brand/{brand_id}/stores", headers=self._headers())
+            response.raise_for_status()
+        return [store for store in response.json().get("stores") or [] if isinstance(store, dict)]
+
+    async def list_delivery_addresses(self, *, token: str, user_id: str | int) -> list[dict[str, Any]]:
+        """主揪在 Nidin 存的常用地址，加上曾經外送過的地址；常用的排前面（官網地址選單用的兩支）。"""
+        favorite = await self._authorized_json(
+            "GET", f"{self.base_url}/user/{user_id}/favorite/address", token=token, user_id=user_id
+        )
+        ordered = await self._authorized_json(
+            "GET", f"{self.base_url}/user/listOrderedAddress", token=token, user_id=user_id
+        )
+        favorites = sorted(favorite.get("list") or [], key=lambda a: not a.get("is_default"))
+        return [a for a in favorites + list(ordered.get("list") or []) if isinstance(a, dict)]
+
+    async def create_group_buy(self, *, token: str, user_id: str | int, store_id: str | int) -> dict[str, Any]:
+        """以主揪身分在這家店開一個空的團（官網「我要揪團」）。不會下單；團名由 Nidin 自動取。
+
+        回傳 order_id／order_sn／sharing_code。外送方式取店家標為預設的那一種，團長結帳時可以改。
+        """
+        async with self._get_client() as client:
+            info_response, version_response = await asyncio.gather(
+                client.get(f"{self.base_url}/store/{store_id}/info", headers=self._headers()),
+                client.get(f"{self.base_url}/store/{store_id}/onShelfMenuVer", headers=self._headers()),
+            )
+        info_response.raise_for_status()
+        version_response.raise_for_status()
+        info, version = info_response.json(), version_response.json()
+        deliveries = info.get("delivery_info") or []
+        default = next((d for d in deliveries if d.get("is_default") == 1), deliveries[0] if deliveries else None)
+        if not info.get("brand_id") or not version.get("menu_id") or default is None:
+            raise NidinApiError("這家店的資料不完整，暫時無法開團。")
+        user = await self.fetch_user_info(token=token, user_id=user_id)
+        if (user.get("user") or user).get("phone_need_verify") not in (0, "0", None):
+            raise NidinApiError("Nidin 要求主揪先驗證手機，請到 Nidin 完成驗證後再開團。")
+        body = await self._authorized_json(
+            "POST",
+            f"{self.base_url}/carts/item",
+            token=token,
+            user_id=user_id,
+            json_body={
+                "brand_id": info["brand_id"],
+                "store_id": int(store_id),
+                "menu_id": version["menu_id"],
+                "menu_ver_stamp": (version.get("version") or {}).get("stamp"),
+                "order_type": 2,
+                "is_empty": 1,
+                "delivery_type": default.get("delivery_type"),
+            },
+        )
+        data = body.get("data") if isinstance(body.get("data"), dict) else body
+        if not data.get("sharing_code") or not data.get("order_id"):
+            raise NidinApiError("Nidin 沒有回傳揪團碼。")
+        return data
+
     async def fetch_user_info(self, *, token: str, user_id: str | int) -> dict[str, Any]:
         """讀取憑證所屬會員的資料（官網 getUserInfo 用的同一支唯讀 GET）。"""
         async with self._get_client() as client:

@@ -58,7 +58,10 @@ async def test_requests_without_a_valid_key_are_rejected(isolated_store):
 async def test_lists_the_ordering_tools(isolated_store):
     res = await _rpc("tools/list", key=_key())
     names = {tool["name"] for tool in res.json()["result"]["tools"]}
-    assert names == {"list_groups", "get_menu", "place_order", "list_orders", "cancel_order", "open_group", "set_paid"}
+    assert names == {
+        "list_groups", "get_menu", "place_order", "list_orders", "cancel_order",
+        "open_group", "set_paid", "find_stores", "open_new_group",
+    }
 
 
 @pytest.mark.anyio

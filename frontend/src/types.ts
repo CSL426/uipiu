@@ -204,3 +204,24 @@ export interface CreatedApiKey extends ApiKeyInfo {
   /** 只在建立時回傳這一次 */
   key: string;
 }
+
+export type StoreSort = "distance" | "rating";
+
+export interface NidinStoreCandidate {
+  store_id: string;
+  name: string;
+  address: string;
+  distance_km: number | null;
+  rating: number;
+  rating_count: number;
+  /** 依評價數加權後的分數，評分排序用 */
+  score: number;
+  orderable: boolean;
+}
+
+export interface NidinStoreSearchResult {
+  brands: string[];
+  /** 算距離的起點（主揪在 Nidin 的地址名稱）；null＝讀不到 */
+  origin: string | null;
+  stores: NidinStoreCandidate[];
+}

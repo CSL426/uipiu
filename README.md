@@ -34,9 +34,13 @@
    - 大家在本站點的單以訪客身分加入 Ocard 的團（名字＝點單人），本站畫面同步 Ocard 上的跟團清單。
    - 只能撤回從本站送出的單；團長自己或別人直接在 Ocard 點的單，請到 Ocard 處理。結帳一樣由團長在 Ocard 完成。
 
+7. **🔍 依品牌找店、直接開團（Nidin）**
+   - 管理頁「在 Nidin 開新團」：輸入品牌，依「離我最近」（從主揪在 Nidin 的常用地址算）或「評分相對高」（評價數加權、8 公里內）列出分店，按兩次「開團」就在主揪的 Nidin 帳號開好並加進本站。
+   - 不要的團可在團購管理按「從本站移除」，只刪本站紀錄。
+
 6. **🤖 給外部 agent 用的 MCP**
    - 主揪在管理頁「外部 agent 的 API key」發 key：**點單**（查團、看菜單、點單、撤回自己的單）或**主揪**（再加上開團、撤回團裡任何一筆、標記收款）。key 只顯示一次。
-   - agent 連 `https://<你的網域>/mcp`（MCP streamable HTTP），帶 `Authorization: Bearer <key>`。工具：`list_groups`、`get_menu`、`place_order`、`list_orders`、`cancel_order`、`open_group`、`set_paid`。
+   - agent 連 `https://<你的網域>/mcp`（MCP streamable HTTP），帶 `Authorization: Bearer <key>`。工具：`list_groups`、`get_menu`、`place_order`、`list_orders`、`cancel_order`、`open_group`、`set_paid`、`find_stores`、`open_new_group`。
    - Claude Code 例：`claude mcp add --transport http mynig https://<你的網域>/mcp --header "Authorization: Bearer <key>"`
    - 送單走和公開頁同一條流程（防重送、Nidin／Ocard 皆可）；每把 key 各自限流。REST 文件在 `/api/docs`。
 

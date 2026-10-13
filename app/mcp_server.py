@@ -27,6 +27,7 @@ from app.api_keys import ApiKeyPrincipal
 
 INSTRUCTIONS = (
     "飲料團購點單。先 list_groups 找團，get_menu 看品項與規格，再 place_order。"
+    "主揪 key 還能用 find_stores 依品牌找店、open_new_group 開新團。"
     "送出的是真的訂單：名字就是平台上這張單的名字；同一筆重送請帶相同的 idempotency_key。"
 )
 
@@ -102,6 +103,17 @@ def build_server() -> MCPServer:
     async def set_paid(group_id: str, name: str, paid: bool, ctx: Context) -> dict[str, Any]:
         """（主揪 key）標記某人已收款或未收款。"""
         return await _run(agent_tools.set_paid(_principal(ctx), group_id, name, paid))
+
+    @server.tool()
+    async def find_stores(brand: str, ctx: Context, sort: str = "distance") -> dict[str, Any]:
+        """（主揪 key）在 Nidin 依品牌找分店。sort=distance 離主揪常用地址最近；sort=rating 評分相對高
+        （評價數少的會被拉向平均，且只看 8 公里內）。回傳 store_id 給 open_new_group 用。"""
+        return await _run(agent_tools.find_stores(_principal(ctx), brand, sort))
+
+    @server.tool()
+    async def open_new_group(store_id: str, ctx: Context) -> dict[str, Any]:
+        """（主揪 key）以主揪的 Nidin 帳號在這家店開一個新團，並加進本站。開團不會下單或付款。"""
+        return await _run(agent_tools.open_new_group(_principal(ctx), store_id))
 
     return server
 

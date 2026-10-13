@@ -3,16 +3,20 @@
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 import httpx
+from pydantic import BaseModel
 
+from app import auth as account_auth
 from app import dependencies
+from app import store_search
 from app.auth import AuthUser, require_user
 from app.deps_shared import initialize_legacy_ownership
 from app.models import NidinGroupBuy, NidinGroupBuyImport
 from app.nidin.client import NidinApiError
 from app.routers.cart_sessions import create_session_from_group_buy_url
 from app.routers.leader_auth import call_with_nidin_relogin, fetch_official_info
+from app.store_search import SortBy
 
 router = APIRouter()
 
@@ -110,3 +114,87 @@ async def import_nidin_group_buy(
         # 團已經建好了，同步失敗不該讓整個匯入看起來失敗；之後可以再按同步
         return NidinGroupBuyImport(session=store.get_session(summary.session_id), sync_error=str(exc.detail))
     return NidinGroupBuyImport(session=store.merge_official_orders_to_lines(summary.session_id, official))
+
+
+# ---- 依品牌找店、直接開新團 ----------------------------------------------------
+
+
+class StoreSearchResult(BaseModel):
+    brands: list[str]
+    # 算距離用的起點（主揪 Nidin 的常用或曾外送地址）；None＝讀不到，只能依評分排
+    origin: str | None = None
+    stores: list[dict[str, Any]]
+
+
+async def search_stores(user: AuthUser, keyword: str, sort: SortBy) -> StoreSearchResult:
+    client = dependencies.get_nidin_client()
+    try:
+        matched = store_search.match_brands(await store_search.brands(client), keyword)
+    except httpx.HTTPError as exc:
+        raise _nidin_error(exc) from exc
+    if not matched:
+        raise HTTPException(status_code=404, detail=f"Nidin 上找不到「{keyword}」這個品牌。")
+    matched = matched[:3]
+    try:
+        stores = [store for brand in matched for store in await client.list_brand_stores(brand["id"])]
+    except httpx.HTTPError as exc:
+        raise _nidin_error(exc) from exc
+
+    origin = None
+    try:
+        addresses, _ = await call_with_nidin_relogin(
+            user, lambda token, user_id: client.list_delivery_addresses(token=token, user_id=user_id)
+        )
+        origin = store_search.origin_from_addresses(addresses)
+    except (HTTPException, NidinApiError, httpx.HTTPError):
+        # 讀不到地址只是不能算距離，照樣列出來
+        pass
+    ranked = store_search.rank_stores(stores, origin, sort)
+    return StoreSearchResult(
+        brands=[str(brand.get("name") or "") for brand in matched],
+        origin=origin.label if origin else None,
+        stores=ranked,
+    )
+
+
+async def open_group_at_store(user: AuthUser, store_id: str) -> NidinGroupBuyImport:
+    """在 Nidin 開一個空團，接著匯入本站。開團不會下單；不要的空團可在 Nidin 刪掉。"""
+    if not store_id.isdigit():
+        raise HTTPException(status_code=422, detail="店家代號不正確。")
+    client = dependencies.get_nidin_client()
+    try:
+        created, _ = await call_with_nidin_relogin(
+            user, lambda token, user_id: client.create_group_buy(token=token, user_id=user_id, store_id=store_id)
+        )
+    except (NidinApiError, httpx.HTTPError) as exc:
+        raise _nidin_error(exc) from exc
+    group_buy_url = f"https://order.nidin.shop/gb/menu/{store_id}/{created['sharing_code']}"
+    try:
+        summary = await create_session_from_group_buy_url(group_buy_url, "", user.id)
+    except (ValueError, PermissionError, NidinApiError, httpx.HTTPError) as exc:
+        # Nidin 上的團已經開好了，只是本站沒匯入成功；把連結告訴主揪，不要讓人以為沒開
+        raise HTTPException(
+            status_code=502, detail=f"Nidin 上已開團（{group_buy_url}），但匯入本站失敗：{exc}"
+        ) from exc
+    store = dependencies.get_cart_store()
+    store.link_nidin_order(summary.session_id, str(created["order_id"]))
+    return NidinGroupBuyImport(session=store.get_session(summary.session_id))
+
+
+@router.get("/nidin/stores", response_model=StoreSearchResult)
+async def find_nidin_stores(
+    brand: str = Query(min_length=1, max_length=40),
+    sort: SortBy = "distance",
+    user: AuthUser = Depends(require_user),
+) -> StoreSearchResult:
+    initialize_legacy_ownership()
+    return await search_stores(user, brand, sort)
+
+
+@router.post("/nidin/stores/{store_id}/group-buy", response_model=NidinGroupBuyImport)
+async def open_nidin_group_buy(
+    store_id: str, request: Request, user: AuthUser = Depends(require_user)
+) -> NidinGroupBuyImport:
+    account_auth.check_csrf(request)
+    initialize_legacy_ownership()
+    return await open_group_at_store(user, store_id)

@@ -462,6 +462,15 @@ class CartStore:
             row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (session_id,)).fetchone()
             return self._row_to_summary(row)
 
+    def delete_session(self, session_id: str) -> None:
+        """只刪本站的紀錄（品項、送單紀錄、收款標記）；平台上的團和單不受影響。"""
+        with self._connect() as conn:
+            if conn.execute("SELECT 1 FROM sessions WHERE session_id=?", (session_id,)).fetchone() is None:
+                raise KeyError(f"Unknown cart session: {session_id}")
+            for table in ("payments", "lines", "order_submissions"):
+                conn.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
+            conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
+
     def get_session(self, session_id: str) -> CartSessionDetail:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (session_id,)).fetchone()
