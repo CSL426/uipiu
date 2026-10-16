@@ -1,11 +1,12 @@
 import { LoaderCircle, Plus, Search, Star } from "lucide-react";
 import { useState } from "react";
 
-import type { CartSessionDetail, NidinGroupBuyImport, NidinStoreSearchResult, StoreSort } from "../types";
+import type { CartSessionDetail, NidinStoreSearchResult, OpenedNidinGroupBuy, StoreSort } from "../types";
 import { CustomSelect } from "./CustomSelect";
 
 interface NidinStoreSearchProps {
-  onOpened: (session: CartSessionDetail) => void;
+  /** pickupNote：取餐方式設成了什麼，或為什麼沒設成外送 */
+  onOpened: (session: CartSessionDetail, pickupNote: string) => void;
 }
 
 async function detailOf(res: Response, fallback: string): Promise<string> {
@@ -61,7 +62,8 @@ export function NidinStoreSearch({ onOpened }: NidinStoreSearchProps) {
         setError(await detailOf(res, "開團失敗。"));
         return;
       }
-      onOpened(((await res.json()) as NidinGroupBuyImport).session);
+      const opened = (await res.json()) as OpenedNidinGroupBuy;
+      onOpened(opened.session, opened.pickup_note);
       setConfirmingId(null);
     } catch {
       setError("連不上本站伺服器，請到 Nidin 確認團有沒有開成功再重試。");

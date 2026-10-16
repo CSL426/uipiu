@@ -386,10 +386,10 @@ export function AdminPage() {
           </button>
           {leaderAuth?.is_authenticated ? (
             <NidinStoreSearch
-              onOpened={(session) => {
+              onOpened={(session, pickupNote) => {
                 setSessions((current) => upsertSessionSummary(current, toSessionSummary(session)));
                 void loadDetail(session.session_id);
-                setStatusMessage(`已在 Nidin 開團並加進本站：${session.session_name}。`);
+                setStatusMessage(`已在 Nidin 開團並加進本站：${session.session_name}。${pickupNote}`);
               }}
             />
           ) : null}

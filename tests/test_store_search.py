@@ -1,5 +1,6 @@
 """依品牌找 Nidin 分店（最近／評分相對高）、直接開新團並匯入、從本站移除團。"""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -103,17 +104,30 @@ def _search_patches(addresses=None):
     ]
 
 
-def _open_patches(create=None):
+OFFICE_ADDRESS = {"loc_name": "公司", "address": "台北市內湖區某路1號", "address_short": "內湖區某路1號",
+                  "area_code": 17, "city_code": 2, "latitude": "25.06", "longitude": "121.57", "src_type": 1, "is_default": 1}
+STORE_INFO = {"address": "台北市大安區某路21號", "distance_service_model": 13,
+              "delivery_info": [{"delivery_type": 1, "is_default": 1}, {"delivery_type": 3, "is_default": 0}]}
+
+
+def _open_patches(create=None, *, store_info=STORE_INFO, addresses=(OFFICE_ADDRESS,), route=(5049, 927),
+                  set_delivery=None, lookup=None):
     menu = normalize_menu_from_api(RAW_GROUP_MENU, "1717")
     delivery = StoreDeliverySummary(store_id="1717", store_name="示範店A", delivery_minimum=500, delivery_description="外送")
-    return [
-        patch.object(NidinClient, "create_group_buy", new=create or AsyncMock(
+    mocks = {
+        "create_group_buy": create or AsyncMock(
             return_value={"order_id": 375000001, "order_sn": "M0375000001", "sharing_code": "ABCDEFGHIJ"},
-        )),
-        patch.object(NidinClient, "fetch_group_buy_brief", new=AsyncMock(return_value={**GROUP_BUY_BRIEF, "store_id": 1717})),
-        patch.object(NidinClient, "fetch_menu", new=AsyncMock(return_value=menu)),
-        patch.object(NidinClient, "fetch_store_delivery_summary", new=AsyncMock(return_value=delivery)),
-    ]
+        ),
+        "fetch_store_info": AsyncMock(return_value=store_info),
+        "list_delivery_addresses": AsyncMock(return_value=list(addresses)),
+        "lookup_delivery_distance": lookup or AsyncMock(return_value=route),
+        "set_group_delivery": set_delivery or AsyncMock(return_value=None),
+        "fetch_group_buy_brief": AsyncMock(return_value={**GROUP_BUY_BRIEF, "store_id": 1717}),
+        "fetch_menu": AsyncMock(return_value=menu),
+        "fetch_store_delivery_summary": AsyncMock(return_value=delivery),
+    }
+    _open_patches.mocks = mocks
+    return [patch.object(NidinClient, name, new=mock) for name, mock in mocks.items()]
 
 
 async def _run(patches, call):
@@ -213,3 +227,89 @@ async def test_order_agent_cannot_open_groups():
         await agent_tools.find_stores(orderer, "青山")
     with pytest.raises(ToolError, match="不能開團"):
         await agent_tools.open_new_group(orderer, "1717")
+
+
+# ---- 開團後套用主揪的外送地址 ---------------------------------------------------
+
+
+async def _open(patches):
+    async def call():
+        async with _api() as client:
+            return await client.post("/nidin/stores/1717/group-buy")
+
+    return await _run(patches, call)
+
+
+@pytest.mark.anyio
+async def test_new_group_is_switched_to_delivery_at_the_leaders_default_address():
+    res = await _open(_open_patches())
+    body = res.json()
+    assert res.status_code == 200, res.text
+    assert body["pickup"] == "delivery" and "公司" in body["pickup_note"]
+    call = _open_patches.mocks["set_group_delivery"].await_args.kwargs
+    assert (call["order_id"], call["distance"], call["duration"]) == ("375000001", 5049, 927)
+    assert call["address"]["address"] == "台北市內湖區某路1號"
+
+
+@pytest.mark.anyio
+async def test_unknown_route_distance_keeps_the_store_default_and_says_so():
+    res = await _open(_open_patches(route=None))
+    body = res.json()
+    assert res.status_code == 200
+    assert body["pickup"] == "store_default" and "外送距離" in body["pickup_note"]
+    _open_patches.mocks["set_group_delivery"].assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_store_without_delivery_or_leader_without_address_keeps_the_default():
+    pickup_only = {**STORE_INFO, "delivery_info": [{"delivery_type": 1, "is_default": 1}]}
+    res = await _open(_open_patches(store_info=pickup_only))
+    assert res.json()["pickup"] == "store_default" and "不提供外送" in res.json()["pickup_note"]
+
+    no_coords = [{**OFFICE_ADDRESS, "latitude": "", "longitude": ""}]
+    res = await _open(_open_patches(addresses=no_coords))
+    assert res.json()["pickup"] == "store_default" and "沒有設定外送地址" in res.json()["pickup_note"]
+
+
+@pytest.mark.anyio
+async def test_a_failed_delivery_update_does_not_fail_the_group_opening():
+    res = await _open(_open_patches(set_delivery=AsyncMock(side_effect=httpx.ConnectError("down"))))
+    assert res.status_code == 200
+    assert res.json()["pickup"] == "store_default"
+    assert res.json()["session"]["group_buy_url"].endswith("/ABCDEFGHIJ")
+
+
+def _capturing_client(responses):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, json.loads(request.content or b"null")))
+        return httpx.Response(200, json=responses[request.url.path.rsplit("/v2", 1)[-1]])
+
+    return NidinClient(base_url="https://nidin.test/v2", client=httpx.AsyncClient(transport=httpx.MockTransport(handler))), seen
+
+
+@pytest.mark.anyio
+async def test_distance_lookup_uses_address_strings_and_never_writes_the_shared_cache():
+    hit = {"status": 200, "list": [{"distance": 5049, "duration": 927}]}
+    client, seen = _capturing_client({"/platform/checkAddressDistance": hit})
+    route = await client.lookup_delivery_distance(token="t", user_id="1", store_info=STORE_INFO, address=OFFICE_ADDRESS)
+    assert route == (5049, 927)
+    method, path, body = seen[0]
+    assert (method, path) == ("POST", "/v2/platform/checkAddressDistance")
+    assert body == {"src_address": "台北市大安區某路21號", "dest_address": "台北市內湖區某路1號", "distance_service_model": 13}
+    assert all("saveAddressDistance" not in p for _, p, _ in seen)
+
+
+@pytest.mark.anyio
+async def test_delivery_update_never_sends_the_field_that_closes_the_group():
+    client, seen = _capturing_client({"/order/375000001/infoCouponFlow": {"status": 200}})
+    await client.set_group_delivery(
+        token="t", user_id="1", order_id="375000001", store_info=STORE_INFO, address=OFFICE_ADDRESS,
+        distance=5049, duration=927,
+    )
+    method, path, body = seen[0]
+    assert method == "PUT" and path == "/v2/order/375000001/infoCouponFlow"
+    assert "group_buying_status" not in body
+    assert body["delivery_type"] == 3 and body["delivery_distance"] == 5049
+    assert (body["delivery_latitude"], body["delivery_location"]) == ("25.06", "公司")

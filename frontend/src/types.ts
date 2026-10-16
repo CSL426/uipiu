@@ -207,6 +207,12 @@ export interface CreatedApiKey extends ApiKeyInfo {
 
 export type StoreSort = "distance" | "rating";
 
+/** 本站直接開的團：pickup＝delivery 表示已改成外送到主揪的預設地址 */
+export interface OpenedNidinGroupBuy extends NidinGroupBuyImport {
+  pickup: "delivery" | "store_default";
+  pickup_note: string;
+}
+
 export interface NidinStoreCandidate {
   store_id: string;
   name: string;

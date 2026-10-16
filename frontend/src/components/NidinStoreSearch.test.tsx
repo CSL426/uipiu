@@ -24,7 +24,9 @@ describe("NidinStoreSearch", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith("/api/nidin/stores?")) return response(RESULT);
-      if (url === "/api/nidin/stores/28417/group-buy" && init?.method === "POST") return response({ session, sync_error: null });
+      if (url === "/api/nidin/stores/28417/group-buy" && init?.method === "POST") {
+        return response({ session, sync_error: null, pickup: "delivery", pickup_note: "已設成外送到「公司」（路線約 5.0 公里）。" });
+      }
       throw new Error("Unexpected fetch: " + url);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -43,7 +45,7 @@ describe("NidinStoreSearch", () => {
     fireEvent.click(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "確定開團？" }));
-    await vi.waitFor(() => expect(onOpened).toHaveBeenCalledWith(session));
+    await vi.waitFor(() => expect(onOpened).toHaveBeenCalledWith(session, "已設成外送到「公司」（路線約 5.0 公里）。"));
   });
 
   it("explains an unknown brand", async () => {

@@ -288,4 +288,6 @@ async def open_new_group(principal: ApiKeyPrincipal, store_id: str) -> dict[str,
         "name": session.session_name,
         "link": session.group_buy_url,
         "delivery_minimum": session.delivery_minimum,
+        "pickup": imported.pickup,
+        "pickup_note": imported.pickup_note,
     }

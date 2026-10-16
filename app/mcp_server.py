@@ -112,7 +112,8 @@ def build_server() -> MCPServer:
 
     @server.tool()
     async def open_new_group(store_id: str, ctx: Context) -> dict[str, Any]:
-        """（主揪 key）以主揪的 Nidin 帳號在這家店開一個新團，並加進本站。開團不會下單或付款。"""
+        """（主揪 key）以主揪的 Nidin 帳號在這家店開一個新團，並加進本站。開團不會下單或付款。
+        會自動改成外送到主揪在 Nidin 的預設地址；pickup／pickup_note 說明實際設成什麼。"""
         return await _run(agent_tools.open_new_group(_principal(ctx), store_id))
 
     return server

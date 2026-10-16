@@ -60,14 +60,27 @@ def match_brands(all_brands: list[dict[str, Any]], keyword: str) -> list[dict[st
     return exact or [b for b in all_brands if any(keyword in n for n in names(b))]
 
 
+def _coordinates(address: dict[str, Any]) -> tuple[float, float] | None:
+    try:
+        lat, lng = float(address.get("latitude")), float(address.get("longitude"))
+    except (TypeError, ValueError):
+        return None
+    return (lat, lng) if lat and lng else None
+
+
+def default_delivery_address(addresses: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """主揪的預設外送地址：常用地址（設為預設的優先）、再來曾外送過的。
+    要有座標，也要有完整地址：Nidin 的外送距離快取以地址字串查。"""
+    return next((a for a in addresses if _coordinates(a) and a.get("address")), None)
+
+
 def origin_from_addresses(addresses: list[dict[str, Any]]) -> Origin | None:
+    """算距離的起點只需要座標。"""
     for address in addresses:
-        try:
-            lat, lng = float(address.get("latitude")), float(address.get("longitude"))
-        except (TypeError, ValueError):
-            continue
-        if lat and lng:
-            return Origin(lat, lng, str(address.get("loc_name") or address.get("address_short") or "常用地址"))
+        coordinates = _coordinates(address)
+        if coordinates:
+            label = str(address.get("loc_name") or address.get("address_short") or "常用地址")
+            return Origin(coordinates[0], coordinates[1], label)
     return None
 
 

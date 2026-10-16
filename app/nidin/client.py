@@ -61,6 +61,10 @@ class NidinApiError(Exception):
     """Nidin 回了 HTTP 200 但 body 的 status 不是 200，訊息可直接給使用者看。"""
 
 
+# 官網 deliveryName：1 自取、2 內用、3 外送、4 外帶
+DELIVERY_TYPE_PICKUP = 1
+DELIVERY_TYPE_DELIVERY = 3
+
 # 官網「我的訂單」頁的預設篩選（order/list 頁面 data() 的 status 陣列）。
 # 13001／13002／13009 這類值只能放在 special_status，放進 status[] 會回 1101 輸入資訊錯誤
 ORDER_HISTORY_STATUSES = (100, 110, 99, 120, 121, 122, 130, 140, 31, 35, 39, 38)
@@ -396,6 +400,79 @@ class NidinClient:
         if not data.get("sharing_code") or not data.get("order_id"):
             raise NidinApiError("Nidin 沒有回傳揪團碼。")
         return data
+
+    async def lookup_delivery_distance(
+        self, *, token: str, user_id: str | int, store_info: dict[str, Any], address: dict[str, Any]
+    ) -> tuple[int, int] | None:
+        """Nidin 共用快取裡「這家店 → 這個地址」的路線距離（公尺）與時間（秒）；沒有就回 None。
+
+        官網在快取沒有時用瀏覽器裡的 Google 路線算、再寫回快取。伺服器端只讀不寫：
+        寫進去的是所有 Nidin 使用者共用的資料，不能放自己估的數字。
+        """
+        body = await self._authorized_json(
+            "POST",
+            f"{self.base_url}/platform/checkAddressDistance",
+            token=token,
+            user_id=user_id,
+            json_body={
+                # 快取以「店家地址 → 外送地址」字串為鍵（座標字串查不到）
+                "src_address": store_info.get("address"),
+                "dest_address": address.get("address"),
+                "distance_service_model": store_info.get("distance_service_model"),
+            },
+        )
+        hits = body.get("list") or []
+        if not hits or not hits[0].get("distance"):
+            return None
+        return int(hits[0]["distance"]), int(hits[0].get("duration") or 0)
+
+    async def set_group_delivery(
+        self,
+        *,
+        token: str,
+        user_id: str | int,
+        order_id: str | int,
+        store_info: dict[str, Any],
+        address: dict[str, Any],
+        distance: int,
+        duration: int,
+    ) -> None:
+        """把團長單改成外送到這個地址（官網團長頁選外送地址時送出的同一組欄位）。
+
+        同一支 infoCouponFlow 帶 group_buying_status 會關團，這裡絕不帶。
+        """
+        location = str(address.get("loc_name") or address.get("address_short") or "")
+        src_type = address.get("src_type") or None
+        await self._authorized_json(
+            "PUT",
+            f"{self.base_url}/order/{order_id}/infoCouponFlow",
+            token=token,
+            user_id=user_id,
+            json_body={
+                "address": address.get("address") or "",
+                "address_area_code": address.get("area_code") or 0,
+                "address_city_code": address.get("city_code") or 0,
+                "address_formatted": address.get("address") or "",
+                "address_short": address.get("address_short") or "",
+                "delivery_distance": distance,
+                "delivery_duration": duration,
+                "delivery_latitude": address.get("latitude"),
+                "delivery_location": location,
+                "delivery_longitude": address.get("longitude"),
+                "delivery_type": DELIVERY_TYPE_DELIVERY,
+                "distance_service_model": store_info.get("distance_service_model"),
+                "distance_service_vendor": 0,
+                "distance_service_vendor_info": "{}",
+                "src_type": src_type,
+                "delivery_src_type": src_type,
+            },
+        )
+
+    async def fetch_store_info(self, store_id: str | int) -> dict[str, Any]:
+        async with self._get_client() as client:
+            response = await client.get(f"{self.base_url}/store/{store_id}/info", headers=self._headers())
+            response.raise_for_status()
+        return response.json()
 
     async def fetch_user_info(self, *, token: str, user_id: str | int) -> dict[str, Any]:
         """讀取憑證所屬會員的資料（官網 getUserInfo 用的同一支唯讀 GET）。"""

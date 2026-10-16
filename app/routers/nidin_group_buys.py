@@ -12,8 +12,8 @@ from app import dependencies
 from app import store_search
 from app.auth import AuthUser, require_user
 from app.deps_shared import initialize_legacy_ownership
-from app.models import NidinGroupBuy, NidinGroupBuyImport
-from app.nidin.client import NidinApiError
+from app.models import NidinGroupBuy, NidinGroupBuyImport, OpenedNidinGroupBuy
+from app.nidin.client import DELIVERY_TYPE_DELIVERY, NidinApiError
 from app.routers.cart_sessions import create_session_from_group_buy_url
 from app.routers.leader_auth import call_with_nidin_relogin, fetch_official_info
 from app.store_search import SortBy
@@ -157,8 +157,44 @@ async def search_stores(user: AuthUser, keyword: str, sort: SortBy) -> StoreSear
     )
 
 
-async def open_group_at_store(user: AuthUser, store_id: str) -> NidinGroupBuyImport:
-    """在 Nidin 開一個空團，接著匯入本站。開團不會下單；不要的空團可在 Nidin 刪掉。"""
+async def _apply_leader_delivery(user: AuthUser, store_id: str, order_id: str) -> tuple[str, str]:
+    """把剛開的團改成外送到主揪在 Nidin 的預設地址。做不到就沿用店家預設，並說明原因；不讓開團失敗。"""
+    client = dependencies.get_nidin_client()
+    fallback = "請到 Nidin 團長頁確認取餐方式與外送地址。"
+    try:
+        store_info = await client.fetch_store_info(store_id)
+        if DELIVERY_TYPE_DELIVERY not in {d.get("delivery_type") for d in store_info.get("delivery_info") or []}:
+            return "store_default", "這家店不提供外送，維持店家預設的取餐方式。"
+
+        async def apply(token: str, user_id: str) -> tuple[str, str]:
+            address = store_search.default_delivery_address(
+                await client.list_delivery_addresses(token=token, user_id=user_id)
+            )
+            if address is None:
+                return "store_default", f"你在 Nidin 沒有設定外送地址，維持店家預設。{fallback}"
+            route = await client.lookup_delivery_distance(
+                token=token, user_id=user_id, store_info=store_info, address=address
+            )
+            if route is None:
+                # 路線距離要用瀏覽器裡的 Google 算，本站算不了；不亂填，留給主揪在 Nidin 選一次地址
+                return "store_default", f"Nidin 還沒有這家店到你常用地址的外送距離，維持店家預設。{fallback}"
+            distance, duration = route
+            await client.set_group_delivery(
+                token=token, user_id=user_id, order_id=order_id,
+                store_info=store_info, address=address, distance=distance, duration=duration,
+            )
+            name = address.get("loc_name") or address.get("address_short") or address.get("address")
+            return "delivery", f"已設成外送到「{name}」（路線約 {distance / 1000:.1f} 公里）。"
+
+        result, _ = await call_with_nidin_relogin(user, apply)
+    except (HTTPException, NidinApiError, httpx.HTTPError) as exc:
+        detail = exc.detail if isinstance(exc, HTTPException) else str(exc) or "連不上 Nidin"
+        return "store_default", f"設定外送時出錯（{detail}），維持店家預設。{fallback}"
+    return result
+
+
+async def open_group_at_store(user: AuthUser, store_id: str) -> OpenedNidinGroupBuy:
+    """在 Nidin 開一個空團、改成外送到主揪的預設地址，接著匯入本站。開團不會下單；不要的空團可在 Nidin 刪掉。"""
     if not store_id.isdigit():
         raise HTTPException(status_code=422, detail="店家代號不正確。")
     client = dependencies.get_nidin_client()
@@ -168,6 +204,7 @@ async def open_group_at_store(user: AuthUser, store_id: str) -> NidinGroupBuyImp
         )
     except (NidinApiError, httpx.HTTPError) as exc:
         raise _nidin_error(exc) from exc
+    pickup, pickup_note = await _apply_leader_delivery(user, store_id, str(created["order_id"]))
     group_buy_url = f"https://order.nidin.shop/gb/menu/{store_id}/{created['sharing_code']}"
     try:
         summary = await create_session_from_group_buy_url(group_buy_url, "", user.id)
@@ -178,7 +215,7 @@ async def open_group_at_store(user: AuthUser, store_id: str) -> NidinGroupBuyImp
         ) from exc
     store = dependencies.get_cart_store()
     store.link_nidin_order(summary.session_id, str(created["order_id"]))
-    return NidinGroupBuyImport(session=store.get_session(summary.session_id))
+    return OpenedNidinGroupBuy(session=store.get_session(summary.session_id), pickup=pickup, pickup_note=pickup_note)
 
 
 @router.get("/nidin/stores", response_model=StoreSearchResult)
@@ -191,10 +228,10 @@ async def find_nidin_stores(
     return await search_stores(user, brand, sort)
 
 
-@router.post("/nidin/stores/{store_id}/group-buy", response_model=NidinGroupBuyImport)
+@router.post("/nidin/stores/{store_id}/group-buy", response_model=OpenedNidinGroupBuy)
 async def open_nidin_group_buy(
     store_id: str, request: Request, user: AuthUser = Depends(require_user)
-) -> NidinGroupBuyImport:
+) -> OpenedNidinGroupBuy:
     account_auth.check_csrf(request)
     initialize_legacy_ownership()
     return await open_group_at_store(user, store_id)

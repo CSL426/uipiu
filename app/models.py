@@ -254,6 +254,13 @@ class NidinGroupBuyImport(BaseModel):
     sync_error: str | None = None
 
 
+class OpenedNidinGroupBuy(NidinGroupBuyImport):
+    """本站直接開的團。pickup：delivery＝已改成外送到主揪的預設地址；store_default＝沿用店家預設（多半是自取）。"""
+
+    pickup: Literal["delivery", "store_default"] = "store_default"
+    pickup_note: str = ""
+
+
 class LeaderAuthCheck(BaseModel):
     """實際向 Nidin 讀取會員資料後的連線狀態。"""
 
