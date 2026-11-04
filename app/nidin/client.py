@@ -468,6 +468,43 @@ class NidinClient:
             },
         )
 
+    async def fetch_order_basic(self, *, token: str, user_id: str | int, order_id: str | int) -> dict[str, Any]:
+        """團長單的基本資料（取餐方式、外送地址等）。"""
+        body = await self._authorized_json(
+            "GET", f"{self.base_url}/order/{order_id}/info", token=token, user_id=user_id
+        )
+        return (body.get("order_info") or {}).get("basic") or {}
+
+    async def list_disabled_items(self, store_id: str | int) -> dict[str, list[str]]:
+        """這家店目前停賣的品項與選項名稱（公開）。onShelfMenu 看起來一切正常，停賣只在這支查得到。"""
+        async with self._get_client() as client:
+            menu_response, disabled_response = await asyncio.gather(
+                client.get(f"{self.base_url}/store/{store_id}/onShelfMenu", headers=self._headers()),
+                client.get(f"{self.base_url}/store/{store_id}/disableItemsRelationNew", headers=self._headers()),
+            )
+        menu_response.raise_for_status()
+        disabled_response.raise_for_status()
+        menu = menu_response.json().get("menu") or {}
+        disabled = disabled_response.json()
+
+        def names(table_key: str) -> dict[str, str]:
+            table = menu.get(table_key) or {}
+            column = (table.get("schema") or {}).get("name")
+            return {str(key): row[column] for key, row in (table.get("data") or {}).items() if column is not None}
+
+        products, options = names("product_list_json"), names("option_list_json")
+        product_groups = (disabled.get("product_list") or {}).get("category") or {}
+        product_ids = {str(entry.get("product_id")) for rows in product_groups.values() for entry in rows}
+        # option_list 的 key 是規格群組 id，值裡的 product_id 才是選項 id
+        option_rows = disabled.get("option_list") or {}
+        option_ids = {
+            str(entry.get("product_id")) for rows in option_rows.values() for entry in rows
+        } if isinstance(option_rows, dict) else set()
+        return {
+            "products": sorted(products.get(item, f"未知品項 {item}") for item in product_ids),
+            "options": sorted(options.get(item, f"未知選項 {item}") for item in option_ids),
+        }
+
     async def fetch_store_info(self, store_id: str | int) -> dict[str, Any]:
         async with self._get_client() as client:
             response = await client.get(f"{self.base_url}/store/{store_id}/info", headers=self._headers())

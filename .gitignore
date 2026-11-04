@@ -76,6 +76,7 @@ docker-compose.override.yml
 /frontend/vite.config.d.ts
 
 # Local agent settings, browser traces, and worktrees
-/.claude/
+/.claude/*
+!/.claude/skills/
 /.playwright-mcp/
 /.worktree/

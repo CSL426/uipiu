@@ -38,6 +38,10 @@
    - 管理頁「在 Nidin 開新團」：輸入品牌，依「離我最近」（從主揪在 Nidin 的常用地址算）或「評分相對高」（評價數加權、8 公里內）列出分店，按兩次「開團」就在主揪的 Nidin 帳號開好並加進本站。開好後自動改成外送到主揪在 Nidin 的預設地址；Nidin 還沒有該店到這個地址的外送距離時維持店家預設（多半是自取），畫面會提示到 Nidin 設定。
    - 不要的團可在團購管理按「從本站移除」，只刪本站紀錄。
 
+8. **⌨️ 主揪指令與 Claude Code skill**
+   - 容器內的 `python -m app.cli`（`groups`、`find-stores`、`disabled`、`open`、`import`、`status`、`menu`、`order`、`orders`、`cancel`、`paid`、`remove`），輸出 JSON。
+   - 在這個 repo 用 Claude Code 時，`.claude/skills/group-order` 會依對話走完找店、開團、點單的流程。
+
 6. **🤖 給外部 agent 用的 MCP**
    - 主揪在管理頁「外部 agent 的 API key」發 key：**點單**（查團、看菜單、點單、撤回自己的單）或**主揪**（再加上開團、撤回團裡任何一筆、標記收款）。key 只顯示一次。
    - agent 連 `https://<你的網域>/mcp`（MCP streamable HTTP），帶 `Authorization: Bearer <key>`。工具：`list_groups`、`get_menu`、`place_order`、`list_orders`、`cancel_order`、`open_group`、`set_paid`、`find_stores`、`open_new_group`。
