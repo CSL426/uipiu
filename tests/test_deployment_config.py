@@ -12,12 +12,32 @@ ROOT = Path(__file__).resolve().parent.parent
 SERVICES = yaml.safe_load((ROOT / "compose.yaml").read_text())["services"]
 
 
-def test_production_exposes_only_the_edge_proxy():
+NGINX_CONF = (ROOT / "frontend/docker/nginx.conf").read_text()
+
+
+def test_production_exposes_only_the_frontend_edge_proxy():
     published = {name for name, service in SERVICES.items() if service.get("ports")}
-    assert published == {"nginx"}
-    assert SERVICES["nginx"]["ports"] == ["${PORT:-6464}:80"]
-    assert SERVICES["frontend"]["expose"] == ["80"]
-    assert "http://frontend:80" in (ROOT / "nginx/default.conf.template").read_text()
+    assert published == {"frontend"}
+    assert SERVICES["frontend"]["ports"] == ["${PORT:-6464}:80"]
+    assert "nginx" not in SERVICES
+    assert "COPY docker/nginx.conf /etc/nginx/conf.d/default.conf" in (ROOT / "frontend/Dockerfile").read_text()
+
+
+def test_nginx_resolves_the_backend_on_each_request_so_recreating_it_does_not_502():
+    """寫死 proxy_pass http://nidin-menu-parser:8000 的話，nginx 只在啟動時解析一次，
+    後端重建換 IP 後會一直回 502；也會讓後端沒起來時 nginx 啟動失敗，連前端都開不了。"""
+    assert "resolver 127.0.0.11" in NGINX_CONF
+    assert "set $backend http://nidin-menu-parser:8000;" in NGINX_CONF
+    directives = "\n".join(line for line in NGINX_CONF.splitlines() if not line.lstrip().startswith("#"))
+    targets = re.findall(r"proxy_pass\s+([^;]+);", directives)
+    assert targets and set(targets) == {"$backend"}
+
+
+def test_nginx_routes_every_backend_prefix_and_strips_api():
+    """變數式 proxy_pass 不會自動換掉 location 前綴；少了 rewrite，所有 /api 請求都會打錯路徑。"""
+    for location in ("= /health", "/api/", "/menus/", "/guest/", "/resolve-store", "/parse-order", "= /mcp"):
+        assert f"location {location} {{" in NGINX_CONF
+    assert "rewrite ^/api/(.*)$ /$1 break;" in NGINX_CONF
 
 
 def test_backend_preserves_existing_database_without_mounting_code():
@@ -41,7 +61,7 @@ def test_frontend_starts_from_built_assets_without_installing_packages():
     dockerfile = (ROOT / "frontend/Dockerfile").read_text()
     assert "pnpm install --frozen-lockfile" in dockerfile
     assert "COPY --from=builder /frontend/dist /usr/share/nginx/html" in dockerfile
-    assert "try_files $uri $uri/ /index.html" in dockerfile
+    assert "try_files $uri $uri/ /index.html" in NGINX_CONF
     runner = dockerfile.split(" AS runner", 1)[1]
     startup = (ROOT / "frontend/docker/entrypoint.sh").read_text()
     for text in (runner, startup):
@@ -109,16 +129,12 @@ def test_tests_never_default_to_the_production_database():
 def test_nginx_passes_the_upstream_scheme_through_for_tunnels():
     """ngrok 等通道在前面做 TLS：nginx 若把 X-Forwarded-Proto 寫死成自己的 $scheme（http），
     後端會以為自己是 http，把瀏覽器的 https Origin 當成跨站請求一律回 403。"""
-    template = (Path(__file__).resolve().parent.parent / "nginx" / "default.conf.template").read_text()
-
-    assert "map ${DOLLAR}http_x_forwarded_proto ${DOLLAR}forwarded_proto" in template
-    assert "X-Forwarded-Proto ${DOLLAR}scheme;" not in template
-    assert template.count("X-Forwarded-Proto ${DOLLAR}forwarded_proto;") >= 1
+    assert "map $http_x_forwarded_proto $forwarded_proto" in NGINX_CONF
+    assert "X-Forwarded-Proto $scheme;" not in NGINX_CONF
+    assert NGINX_CONF.count("X-Forwarded-Proto $forwarded_proto;") >= 1
 
 
 def test_nginx_overwrites_x_forwarded_for_so_clients_cannot_spoof_their_ip():
     """後端用來源 IP 做登入與送單限流；nginx 若附加用戶端自帶的 X-Forwarded-For，任何人都能偽造 IP 繞過。"""
-    template = (Path(__file__).resolve().parent.parent / "nginx" / "default.conf.template").read_text()
-
-    assert "proxy_add_x_forwarded_for" not in template
-    assert "X-Forwarded-For ${DOLLAR}remote_addr;" in template
+    assert "proxy_add_x_forwarded_for" not in NGINX_CONF
+    assert "X-Forwarded-For $remote_addr;" in NGINX_CONF

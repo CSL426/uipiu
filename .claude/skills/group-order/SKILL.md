@@ -28,7 +28,7 @@ docker compose exec -T nidin-menu-parser python -m app.cli <指令>
 | `paid <group_id> <名字> [--unpaid]` | 標記收款 | 只更新本站 |
 | `remove <group_id>` | 從本站移除，平台上的團不受影響 | 只更新本站 |
 
-`docker compose` 要在 repo 根目錄執行。改了 `app/` 的程式要重建映像才會生效（`docker compose build nidin-menu-parser` 建完再 `up -d`，接著 `restart nginx`，否則 nginx 拿舊 IP 回 502）。資料和憑證放在 `app/data` 的 bind mount，重建不會掉。
+`docker compose` 要在 repo 根目錄執行。改了 `app/` 的程式要重建映像才會生效（`docker compose build nidin-menu-parser` 建完再 `up -d`）。資料和憑證放在 `app/data` 的 bind mount，重建不會掉。
 
 ## 開團
 

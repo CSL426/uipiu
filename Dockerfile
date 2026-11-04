@@ -26,9 +26,8 @@ RUN pip install --no-cache-dir -r requirements-test.txt
 COPY tests ./tests
 COPY scripts ./scripts
 COPY pytest.ini compose.yaml Dockerfile .env.example ./
-COPY nginx/default.conf.template ./nginx/default.conf.template
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/Dockerfile ./frontend/
-COPY frontend/docker/entrypoint.sh ./frontend/docker/entrypoint.sh
+COPY frontend/docker/entrypoint.sh frontend/docker/nginx.conf ./frontend/docker/
 COPY frontend/src ./frontend/src
 USER appuser
 ENV CART_DB_PATH=/tmp/nidin-tests/cart.db

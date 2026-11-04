@@ -13,8 +13,8 @@ CMD ["pnpm", "exec", "vitest", "run"]
 FROM nginx:1.31-alpine AS runner
 COPY --from=builder /frontend/dist /usr/share/nginx/html
 COPY docker/entrypoint.sh /usr/local/bin/frontend-entrypoint
-RUN chmod +x /usr/local/bin/frontend-entrypoint \
-    && printf 'server { listen 80; server_name _; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } }\n' > /etc/nginx/conf.d/default.conf
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+RUN chmod +x /usr/local/bin/frontend-entrypoint
 EXPOSE 80
 ENTRYPOINT ["frontend-entrypoint"]
 CMD ["nginx", "-g", "daemon off;"]

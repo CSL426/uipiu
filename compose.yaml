@@ -46,29 +46,13 @@ services:
       target: runner
     image: nidin-menu-frontend:local
     container_name: nidin-menu-frontend
-    expose:
-      - "80"
+    ports:
+      - "${PORT:-6464}:80"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 15s
       timeout: 5s
       retries: 3
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:1.31-alpine
-    container_name: nidin-menu-parser-nginx
-    depends_on:
-      nidin-menu-parser:
-        condition: service_healthy
-      frontend:
-        condition: service_healthy
-    environment:
-      DOLLAR: "$"
-    volumes:
-      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
-    ports:
-      - "${PORT:-6464}:80"
     restart: unless-stopped
 
   backend-test:

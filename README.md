@@ -54,7 +54,7 @@
 
 * **後端**：FastAPI (Python 3.12)、Pydantic v2、SQLite (WAL 模式)、HTTPX、Google GenAI / `agy`
 * **前端**：React 18、Vite、TypeScript、Framer Motion、Lucide Icons
-* **容器化**：Docker Compose 多容器編排（FastAPI + Vite 建置的靜態前端 + Nginx），Nginx 統一反向代理於單一埠（預設 6464）。
+* **容器化**：Docker Compose 編排 FastAPI 後端與前端容器；前端容器的 Nginx 同時提供靜態檔案並反向代理後端，對外只開單一埠（預設 6464）。
 
 ---
 
