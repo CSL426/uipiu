@@ -27,6 +27,7 @@ docker compose exec -T nidin-menu-parser python -m app.cli <指令>
 | `cancel <group_id> <order_id>` | 撤回一張跟團單 | **是** |
 | `paid <group_id> <名字> [--unpaid]` | 標記收款 | 只更新本站 |
 | `remove <group_id>` | 從本站移除，平台上的團不受影響 | 只更新本站 |
+| `leader-address` | 主揪在 Nidin 的預設外送地址，填 Ocard 用；內容不要寫進回覆 | 否 |
 
 `docker compose` 要在 repo 根目錄執行。改了 `app/` 的程式要重建映像才會生效（`docker compose build nidin-menu-parser` 建完再 `up -d`）。資料和憑證放在 `app/data` 的 bind mount，重建不會掉。
 
@@ -42,7 +43,7 @@ docker compose exec -T nidin-menu-parser python -m app.cli <指令>
 
 **3. Nidin：開團並確認。** `open <store_id>` 後看回應的 `pickup` 與 `pickup_note`，再跑 `status` 讀回平台上的實際狀態，不要只相信回應。開團不會下單，空團可以留著。
 
-**Ocard 開團**：本站沒有使用者的 Ocard 帳號，只能用使用者的 Chrome 操作，流程見 [references/ocard-browser.md](references/ocard-browser.md)。
+**Ocard 開團**：本站沒有使用者的 Ocard 帳號，只能用使用者的 Chrome 操作，流程見 [references/ocard-browser.md](references/ocard-browser.md)。開完要順手補外送地址和時段：使用者明確要求過，空地址的團算不出運費，他還得自己回去補。
 
 開完一定給使用者：Nidin／Ocard 揪團連結、外送門檻或運費規則、取餐方式現況、平台公告裡會影響下單的事。
 

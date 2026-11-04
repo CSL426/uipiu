@@ -84,6 +84,23 @@ def test_status_reads_the_nidin_pickup_from_the_head_order(authenticated_manager
     assert "某路" not in json.dumps(body)
 
 
+def test_leader_address_picks_the_first_usable_nidin_address(authenticated_manager, isolated_store, capsys):
+    from app import auth
+
+    auth.set_leader_credentials(auth.first_admin_id(), "tok-123456789", "777")
+    addresses = [
+        {"loc_name": "沒座標", "address": "某路2號", "latitude": "", "longitude": ""},
+        {"loc_name": "公司", "address": "某路1號", "latitude": "25.06", "longitude": "121.57"},
+    ]
+    patches = [patch.object(NidinClient, "list_delivery_addresses", new=AsyncMock(return_value=addresses))]
+    code, body = _run(capsys, "leader-address", patches=patches)
+    assert code == 0 and body == {"address": "某路1號", "note": "公司"}
+
+    patches = [patch.object(NidinClient, "list_delivery_addresses", new=AsyncMock(return_value=addresses[:1]))]
+    code, body = _run(capsys, "leader-address", patches=patches)
+    assert code == 1 and "沒有可用" in body["error"]
+
+
 def test_remove_only_deletes_the_local_group(ocard_session_id, capsys):
     mocks, patches = _ocard()
     code, body = _run(capsys, "remove", ocard_session_id, patches=patches)

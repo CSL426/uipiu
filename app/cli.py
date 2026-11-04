@@ -14,7 +14,7 @@ import httpx
 from fastapi import HTTPException
 
 import app.main  # noqa: F401  — 載入時才會設定 auth 的資料庫路徑
-from app import agent_tools, dependencies
+from app import agent_tools, dependencies, store_search
 from app import auth as account_auth
 from app.agent_tools import ToolError
 from app.api_keys import ApiKeyPrincipal
@@ -94,6 +94,20 @@ async def disabled(store_id: str) -> dict[str, Any]:
     return await dependencies.get_nidin_client().list_disabled_items(store_id)
 
 
+async def leader_address() -> dict[str, Any]:
+    """主揪在 Nidin 的預設外送地址。Ocard 帳號沒存地址時，開完團要拿這個去填。"""
+    principal = _principal()
+    client = dependencies.get_nidin_client()
+    user = account_auth.get_user(principal.owner_id)
+    addresses, _ = await call_with_nidin_relogin(
+        user, lambda token, user_id: client.list_delivery_addresses(token=token, user_id=user_id)
+    )
+    address = store_search.default_delivery_address(addresses)
+    if address is None:
+        raise ToolError("主揪在 Nidin 沒有可用的外送地址。")
+    return {"address": address.get("address"), "note": address.get("loc_name") or ""}
+
+
 async def remove(group_id: str) -> dict[str, Any]:
     """只刪本站紀錄，平台上的團不受影響。"""
     principal = _principal()
@@ -153,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     paid.add_argument("name")
     paid.add_argument("--unpaid", action="store_true", help="改回未收款")
     commands.add_parser("remove", help="從本站移除團（不影響平台）").add_argument("group_id")
+    commands.add_parser("leader-address", help="主揪在 Nidin 的預設外送地址（填 Ocard 用）")
     return parser
 
 
@@ -163,6 +178,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         return await disabled(args.store_id)
     if args.command == "remove":
         return await remove(args.group_id)
+    if args.command == "leader-address":
+        return await leader_address()
 
     principal = _principal()
     if args.command == "groups":
