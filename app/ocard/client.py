@@ -141,10 +141,11 @@ class OcardClient:
                 "orderType": group.get("orderType") or order_type,
             }, dtk=dtk, client=http)
             products = data.get("products") or []
-            menu_ids = [
+            # 同一杯可能出現在多個分類，規格只抓一次
+            menu_ids = list(dict.fromkeys(
                 str(item["id"]) for category in products for item in category.get("items") or []
                 if item.get("id") and not item.get("soldOut")
-            ]
+            ))
             limit = asyncio.Semaphore(ITEM_FETCH_CONCURRENCY)
 
             async def fetch_item(menu_id: str) -> tuple[str, dict[str, Any]]:

@@ -86,6 +86,8 @@ def normalize_menu(
     categories: list[MenuCategory] = []
     exclusions: dict[str, set[str]] = {}
     menu_id_by_item_id: dict[str, str] = {}
+    # 店家可能把同一杯同時放進「人氣精選」和原分類（菜單 id 相同），本站菜單一個 id 只能出現一次
+    seen_menu_ids: set[str] = set()
 
     for sort, category in enumerate(products):
         category_id = str(category.get("id") or f"cat{sort}")
@@ -94,8 +96,15 @@ def normalize_menu(
         for raw in category.get("items") or []:
             menu_id = str(raw.get("id") or "")
             detail = item_details.get(menu_id)
-            if not menu_id or detail is None or raw.get("soldOut") or detail.get("can_purchase") is False:
+            if (
+                not menu_id
+                or menu_id in seen_menu_ids
+                or detail is None
+                or raw.get("soldOut")
+                or detail.get("can_purchase") is False
+            ):
                 continue
+            seen_menu_ids.add(menu_id)
             group_ids: list[str] = []
             usable = True
             for add in detail.get("adds") or []:

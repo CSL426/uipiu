@@ -14,11 +14,13 @@ from app.ocard import (
     OcardClient,
     check_exclusions,
     normalize_group,
+    normalize_menu,
     parse_group_url,
 )
 from tests.fixtures_ocard import (
     OCARD_GROUP,
     OCARD_GROUP_URL,
+    OCARD_ITEM_DETAILS,
     OCARD_MENU,
     OCARD_PRODUCTS,
     OCARD_TARGET,
@@ -71,6 +73,18 @@ def test_menu_keeps_shared_spec_groups_and_maps_order_item_ids_back():
     assert {option.name: option.price for option in size.options} == {"中杯": 0, "大杯": 5}
     green_item_id = next(i["item_id"] for c in OCARD_PRODUCTS for i in c["items"] if i["name"] == "春芽綠茶")
     assert OCARD_MENU.menu_id_by_item_id[green_item_id] == GREEN.id
+
+
+def test_same_menu_id_in_two_categories_becomes_one_item():
+    """季緣把同一杯放在「人氣精選」和原分類，菜單 id 相同；重複會讓菜單驗證失敗、開不了團。"""
+    green = next(item for category in OCARD_PRODUCTS for item in category["items"] if item["name"] == "春芽綠茶")
+    products = [{"id": "hot", "name": "人氣精選", "items": [green]}, *OCARD_PRODUCTS]
+
+    menu = normalize_menu(TARGET, "店", products, OCARD_ITEM_DETAILS).menu
+
+    validate_menu_snapshot(menu)
+    matches = [item for item in menu.items if item.id == green["id"]]
+    assert len(matches) == 1 and matches[0].category_name == "人氣精選"
 
 
 def test_hot_drinks_cannot_take_jelly_toppings():
