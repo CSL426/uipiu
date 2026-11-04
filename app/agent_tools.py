@@ -68,6 +68,7 @@ async def list_groups(principal: ApiKeyPrincipal) -> dict[str, Any]:
             "delivery_minimum": summary.delivery_minimum,
             "delivery_note": summary.delivery_description or summary.order_status_reason,
             "link": summary.group_buy_url,
+            "auto_remove_at": summary.auto_remove_at,
             "yours": principal.is_leader and store.session_owner(summary.session_id) == principal.owner_id,
         })
     return {"groups": groups}

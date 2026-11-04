@@ -2,7 +2,7 @@ import hashlib
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import TYPE_CHECKING
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from app.order_hooks import HookContext
 
 DB_PATH = Path(os.getenv("CART_DB_PATH", str(Path(__file__).resolve().parent / "data" / "cart.db")))
+DEFAULT_IDLE_DAYS = 7
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -132,6 +133,21 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def idle_days() -> int:
+    """閒置幾天後從本站移除團；0 或負數表示不自動移除。"""
+    try:
+        return int(os.getenv("CART_SESSION_IDLE_DAYS", str(DEFAULT_IDLE_DAYS)))
+    except ValueError:
+        return DEFAULT_IDLE_DAYS
+
+
+def _auto_remove_at(last_activity_at: str | None) -> str | None:
+    days = idle_days()
+    if days <= 0 or not last_activity_at:
+        return None
+    return (datetime.fromisoformat(last_activity_at) + timedelta(days=days)).isoformat()
+
+
 def _line_total(item_price: int, selections: list[CartLineSelection], quantity: int) -> int:
     return (item_price + sum(s.price for s in selections)) * quantity
 
@@ -163,6 +179,11 @@ class CartStore:
             if "provider" not in columns:
                 # 加這個欄位以前的團都是 Nidin
                 conn.execute("ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'nidin'")
+
+            if "last_activity_at" not in columns:
+                # 舊資料從現在起算：加這個欄位當下不該馬上刪掉別人閒置已久的團，留一個週期讓人看到
+                conn.execute("ALTER TABLE sessions ADD COLUMN last_activity_at TEXT")
+                conn.execute("UPDATE sessions SET last_activity_at=?", (_now_iso(),))
 
             if "nidin_order_id" not in columns:
                 # 從「我的 Nidin 團購」匯入時記下 Nidin 團長單號，清單才知道哪些已經匯入過
@@ -314,6 +335,7 @@ class CartStore:
                 (session_id, official_order_id),
             )
             conn.execute("UPDATE sessions SET updated_at=? WHERE session_id=?", (_now_iso(), session_id))
+            self._touch_activity(conn, session_id)
 
     def nidin_order_id(self, session_id: str) -> str | None:
         with self._connect() as conn:
@@ -387,6 +409,7 @@ class CartStore:
                 "ON CONFLICT(session_id, contributor_name) DO UPDATE SET paid=excluded.paid, paid_amount=excluded.paid_amount",
                 (session_id, name, int(paid), owed if paid else None),
             )
+            self._touch_activity(conn, session_id)
         return self.get_payments(session_id)
 
     def list_sessions(self) -> list[CartSessionSummary]:
@@ -431,12 +454,12 @@ class CartStore:
                     """UPDATE sessions SET
                         group_buy_url=?, session_name=?, store_name=?,
                         delivery_minimum=?, delivery_description=?, order_status_reason=?,
-                        menu_json=?, menu_fetched_at=?, updated_at=?
+                        menu_json=?, menu_fetched_at=?, updated_at=?, last_activity_at=?
                     WHERE session_id=?""",
                     (
                         group_buy_url, update_name, store_name,
                         delivery_minimum, delivery_description, order_status_reason,
-                        menu_json, now, now, existing["session_id"],
+                        menu_json, now, now, now, existing["session_id"],
                     ),
                 )
                 row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (existing["session_id"],)).fetchone()
@@ -448,19 +471,39 @@ class CartStore:
                 """INSERT INTO sessions
                     (session_id, group_buy_url, store_id, group_buy_code, session_name,
                      store_name, delivery_minimum, delivery_description, order_status_reason,
-                     menu_json, menu_fetched_at, created_at, updated_at, owner_id, provider)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     menu_json, menu_fetched_at, created_at, updated_at, owner_id, provider, last_activity_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     session_id, group_buy_url, store_id, group_buy_code, default_name,
                     store_name,
                     delivery_summary.delivery_minimum if delivery_summary else None,
                     delivery_summary.delivery_description if delivery_summary else "",
                     delivery_summary.order_status_reason if delivery_summary else "",
-                    menu_json, now, now, now, owner_id, provider,
+                    menu_json, now, now, now, owner_id, provider, now,
                 ),
             )
             row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (session_id,)).fetchone()
             return self._row_to_summary(row)
+
+    @staticmethod
+    def _touch_activity(conn: sqlite3.Connection, session_id: str) -> None:
+        """有人真的動了這個團才算活動。不用 updated_at：看菜單、定期同步都會更新它，開著頁面就永遠不算閒置。"""
+        conn.execute("UPDATE sessions SET last_activity_at=? WHERE session_id=?", (_now_iso(), session_id))
+
+    def purge_idle_sessions(self, now: datetime | None = None) -> list[str]:
+        """移除閒置超過期限的團，回傳名稱。只刪本站紀錄。"""
+        days = idle_days()
+        if days <= 0:
+            return []
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=days)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT session_id, session_name, last_activity_at FROM sessions WHERE last_activity_at IS NOT NULL"
+            ).fetchall()
+        idle = [row for row in rows if datetime.fromisoformat(row["last_activity_at"]) <= cutoff]
+        for row in idle:
+            self.delete_session(row["session_id"])
+        return [row["session_name"] for row in idle]
 
     def delete_session(self, session_id: str) -> None:
         """只刪本站的紀錄（品項、送單紀錄、收款標記）；平台上的團和單不受影響。"""
@@ -614,6 +657,7 @@ class CartStore:
 
             now = _now_iso()
             conn.execute("UPDATE sessions SET updated_at=? WHERE session_id=?", (now, session_id))
+            self._touch_activity(conn, session_id)
             session_row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (session_id,)).fetchone()
             all_lines = self._fetch_lines(conn, session_id)
 
@@ -628,6 +672,7 @@ class CartStore:
             conn.execute("DELETE FROM payments WHERE session_id=?", (session_id,))
             now = _now_iso()
             conn.execute("UPDATE sessions SET updated_at=? WHERE session_id=?", (now, session_id))
+            self._touch_activity(conn, session_id)
             session_row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (session_id,)).fetchone()
         return self._row_to_detail(session_row, [])
 
@@ -655,6 +700,7 @@ class CartStore:
                 "UPDATE sessions SET updated_at=? WHERE session_id=?",
                 (_now_iso(), session_id),
             )
+            self._touch_activity(conn, session_id)
             session_row = conn.execute(
                 "SELECT * FROM sessions WHERE session_id=?", (session_id,),
             ).fetchone()
@@ -751,6 +797,7 @@ class CartStore:
             ).fetchone()
         return CartSessionSummary(
             session_id=row["session_id"],
+            auto_remove_at=_auto_remove_at(row["last_activity_at"]),
             provider=row["provider"],
             group_buy_url=row["group_buy_url"],
             store_id=row["store_id"],
@@ -769,6 +816,7 @@ class CartStore:
     def _row_to_detail(self, row: sqlite3.Row, lines: list[CartSessionLine]) -> CartSessionDetail:
         return CartSessionDetail(
             session_id=row["session_id"],
+            auto_remove_at=_auto_remove_at(row["last_activity_at"]),
             provider=row["provider"],
             group_buy_url=row["group_buy_url"],
             store_id=row["store_id"],
@@ -818,6 +866,7 @@ class CartStore:
                 raise KeyError(f"Unknown cart session: {session_id}")
 
             now = _now_iso()
+            before = self._official_snapshot(conn, session_id)
             # 同步 = 以 Nidin 目前的狀態為準：先清掉上次同步進來的，手動加的品項（無 official_order_id）不動
             conn.execute(
                 "DELETE FROM lines WHERE session_id=? AND official_order_id IS NOT NULL",
@@ -858,6 +907,18 @@ class CartStore:
                     )
 
             conn.execute("UPDATE sessions SET updated_at=? WHERE session_id=?", (now, session_id))
+            # 公開頁開著會每 20 秒同步一次；內容真的變了才算活動
+            if self._official_snapshot(conn, session_id) != before:
+                self._touch_activity(conn, session_id)
             session_row = conn.execute("SELECT * FROM sessions WHERE session_id=?", (session_id,)).fetchone()
             lines = self._fetch_lines(conn, session_id)
         return self._row_to_detail(session_row, lines)
+
+    @staticmethod
+    def _official_snapshot(conn: sqlite3.Connection, session_id: str) -> list[tuple]:
+        rows = conn.execute(
+            "SELECT official_order_id, contributor_name, item_id, quantity, selections_json, line_total "
+            "FROM lines WHERE session_id=? AND official_order_id IS NOT NULL",
+            (session_id,),
+        ).fetchall()
+        return sorted(tuple(row) for row in rows)

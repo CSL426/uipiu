@@ -389,13 +389,16 @@ describe("App", () => {
         removed = true;
         return { ok: true, json: async () => ({ deleted: true }) };
       }
-      if (url === "/api/cart-sessions/session-1") return { ok: true, json: async () => ({ ...emptySessionSummary, lines: [] }) };
+      if (url === "/api/cart-sessions/session-1") {
+        return { ok: true, json: async () => ({ ...emptySessionSummary, auto_remove_at: "2026-11-11T04:00:00+00:00", lines: [] }) };
+      }
       return { ok: true, json: async () => ({}) };
     });
     vi.stubGlobal("fetch", fetchSpy);
 
     render(<App />);
 
+    expect(await screen.findByText(/會從本站移除/)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "從本站移除" }));
     expect(fetchSpy).not.toHaveBeenCalledWith("/api/cart-sessions/session-1", { method: "DELETE" });
     fireEvent.click(screen.getByRole("button", { name: "確定移除？" }));

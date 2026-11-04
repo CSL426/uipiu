@@ -37,6 +37,7 @@
 7. **🔍 依品牌找店、直接開團（Nidin）**
    - 管理頁「在 Nidin 開新團」：輸入品牌，依「離我最近」（從主揪在 Nidin 的常用地址算）或「評分相對高」（評價數加權、8 公里內）列出分店，按兩次「開團」就在主揪的 Nidin 帳號開好並加進本站。開好後自動改成外送到主揪在 Nidin 的預設地址；Nidin 還沒有該店到這個地址的外送距離時維持店家預設（多半是自取），畫面會提示到 Nidin 設定。
    - 不要的團可在團購管理按「從本站移除」，只刪本站紀錄。
+   - 閒置 7 天（沒人下單、取消、改內容、標記收款）的團會自動移除，只刪本站紀錄。天數用 `CART_SESSION_IDLE_DAYS` 調整，0 表示不自動移除。
 
 8. **⌨️ 主揪指令與 Claude Code skill**
    - 容器內的 `python -m app.cli`（`groups`、`find-stores`、`disabled`、`open`、`import`、`status`、`menu`、`order`、`orders`、`cancel`、`paid`、`remove`），輸出 JSON。

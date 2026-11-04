@@ -452,6 +452,11 @@ export function AdminPage() {
             <div>
               <h2>{selectedSessionDetail?.session_name ?? "團購管理"}</h2>
               <p>{selectedSessionDetail?.store_name ?? "選一組團購後查看"}</p>
+              {selectedSessionDetail?.auto_remove_at ? (
+                <p>
+                  沒有新動作的話，{new Date(selectedSessionDetail.auto_remove_at).toLocaleDateString("zh-TW")} 會從本站移除
+                </p>
+              ) : null}
             </div>
             <div className="inline-actions" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
               <button

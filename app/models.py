@@ -154,6 +154,8 @@ class CartSessionSummary(BaseModel):
     session_id: str
     # 這個團開在哪個平台；決定送單、同步、取消要找誰
     provider: Literal["nidin", "ocard"] = "nidin"
+    # 持續閒置的話，什麼時候會從本站移除；None＝不會自動移除
+    auto_remove_at: str | None = None
     group_buy_url: str
     store_id: str
     group_buy_code: str

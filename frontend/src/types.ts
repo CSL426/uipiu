@@ -104,6 +104,8 @@ export interface CartSessionSummary {
   session_id: string;
   /** 團開在哪個平台；舊資料沒有這個欄位＝Nidin */
   provider?: "nidin" | "ocard";
+  /** 持續閒置的話，什麼時候會從本站移除；null＝不會自動移除 */
+  auto_remove_at?: string | null;
   group_buy_url: string;
   store_id: string;
   group_buy_code: string;

@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from app import api_keys
 from app import auth as account_auth
 from app import dependencies
+from app import session_cleanup
 from app.mcp_server import endpoint as mcp_endpoint
 from app.routers import (
     agent_order,
@@ -31,7 +32,7 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with mcp_endpoint.running():
+    async with mcp_endpoint.running(), session_cleanup.running():
         yield
 
 
