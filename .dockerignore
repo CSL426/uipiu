@@ -14,7 +14,8 @@ app/data
 data
 docs
 *.log
-.claude
+.claude/*
+!.claude/skills
 .playwright-mcp
 .worktree
 .worktrees

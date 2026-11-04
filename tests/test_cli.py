@@ -1,6 +1,8 @@
 """python -m app.cli：skill 依賴的主揪指令。輸出是 JSON，失敗 exit 1，且走得到和 MCP 相同的流程。"""
 
 import json
+from pathlib import Path
+import re
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qsl
 
@@ -173,3 +175,22 @@ async def test_disabled_items_maps_ids_to_names():
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def _cli_commands() -> set[str]:
+    actions = cli.build_parser()._subparsers._group_actions
+    return set(actions[0].choices)
+
+
+def test_skill_documents_every_cli_command():
+    """skill 是新 session 唯一的操作說明：CLI 加了指令卻沒寫進去，agent 就會回頭自己寫程式進容器。"""
+    root = Path(__file__).resolve().parent.parent
+    skill = (root / ".claude/skills/group-order/SKILL.md").read_text()
+    documented = set(re.findall(r"^\| `([a-z-]+)[ `]", skill, flags=re.MULTILINE))
+    assert documented == _cli_commands()
+
+
+def test_agents_file_points_new_sessions_at_the_skill():
+    agents = (Path(__file__).resolve().parent.parent / "AGENTS.md").read_text()
+    assert ".claude/skills/group-order/SKILL.md" in agents
+    assert "python -m app.cli" in agents

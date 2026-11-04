@@ -25,7 +25,8 @@ COPY requirements.txt requirements-test.txt ./
 RUN pip install --no-cache-dir -r requirements-test.txt
 COPY tests ./tests
 COPY scripts ./scripts
-COPY pytest.ini compose.yaml Dockerfile .env.example ./
+COPY pytest.ini compose.yaml Dockerfile .env.example AGENTS.md ./
+COPY .claude/skills ./.claude/skills
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/Dockerfile ./frontend/
 COPY frontend/docker/entrypoint.sh frontend/docker/nginx.conf ./frontend/docker/
 COPY frontend/src ./frontend/src

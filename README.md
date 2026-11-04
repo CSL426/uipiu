@@ -40,7 +40,7 @@
 
 8. **⌨️ 主揪指令與 Claude Code skill**
    - 容器內的 `python -m app.cli`（`groups`、`find-stores`、`disabled`、`open`、`import`、`status`、`menu`、`order`、`orders`、`cancel`、`paid`、`remove`），輸出 JSON。
-   - 在這個 repo 用 Claude Code 時，`.claude/skills/group-order` 會依對話走完找店、開團、點單的流程。
+   - 在這個 repo 用 Claude Code、Codex 或 Antigravity 時，`group-order` skill 會依對話走完找店、開團、點單的流程（`.agents/skills/` 是指向 `.claude/skills/` 的連結）。`AGENTS.md` 是給 agent 看的專案說明。
 
 6. **🤖 給外部 agent 用的 MCP**
    - 主揪在管理頁「外部 agent 的 API key」發 key：**點單**（查團、看菜單、點單、撤回自己的單）或**主揪**（再加上開團、撤回團裡任何一筆、標記收款）。key 只顯示一次。
