@@ -27,6 +27,7 @@ docker compose exec -T nidin-menu-parser python -m app.cli <指令>
 | `cancel <group_id> <order_id>` | 撤回一張跟團單 | **是** |
 | `paid <group_id> <名字> [--unpaid]` | 標記收款 | 只更新本站 |
 | `remove <group_id>` | 從本站移除，平台上的團不受影響 | 只更新本站 |
+| `sold-out <group_id>` | 這個團的店家現在售完什麼（Nidin／Ocard 都行，Ocard 鎖定時也查得到） | 否 |
 | `leader-address` | 主揪在 Nidin 的預設外送地址，填 Ocard 用；內容不要寫進回覆 | 否 |
 
 `docker compose` 要在 repo 根目錄執行。改了 `app/` 的程式要重建映像才會生效（`docker compose build nidin-menu-parser` 建完再 `up -d`）。資料和憑證放在 `app/data` 的 bind mount，重建不會掉。
@@ -49,11 +50,24 @@ docker compose exec -T nidin-menu-parser python -m app.cli <指令>
 
 ## 點單與改單
 
-下單是真的訂單。使用者明確說了品項和規格才送；沒說清楚就先用 `menu` 查，問一次。送出前先 `disabled` 或看 `status`，避免點到停賣品項。
+下單是真的訂單。使用者明確說了品項和規格才送；沒說清楚就先用 `menu` 查，問一次。送出前先 `sold-out` 和 `status`，避免點到售完品項或已鎖定的團。
 
 名字會顯示在平台上，也是收款依據，所以要用真名，不能用「訪客」。逾時或不確定有沒有成功時，帶**同一個** `--idempotency-key` 重送，不要換一個重試，否則可能下兩次。
 
 **平台不支援修改跟團單**，「改單」就是 `cancel` 再 `order`。先跟使用者說清楚會這樣做。Ocard 只能撤回從本站送出的單；團長自己或別人直接在 Ocard 點的，要到 Ocard 處理。Nidin 團長自己的飲料（單號 `head:…`）要到 Nidin 改。
+
+## 鎖定、追加與金額
+
+使用者問「還能點嗎」「現在多少」，先跑 `status` 再跑 `orders`，用現在的數字回答，不要用記憶中的金額。
+
+`status` 回 `open: false`、原因是「已鎖定或揪團主正在進行結帳，或已完成訂購」時，Ocard 不會告訴你是哪一種，而且 `orders` 只能給上次同步的舊資料（`synced: false`）。要追加就要解鎖（流程見 references/ocard-browser.md），但付款中不能解鎖，所以先問一句有沒有付款。使用者明確叫你解鎖時就直接做，不要再反問。
+
+算運費時不要自己估距離或套表：
+- `delivery_fee: 0` 不等於免運，**自取**也是 0。先看 `status` 的 `pickup`。
+- 直線距離和手機選店時的預估都比實際路線短（實例：2.5 km 的預估，Ocard 實算 5.18 km）。
+- 店員口頭說的門檻不一定等於系統算法，以結帳頁為準。
+
+Ocard 回傳的東西全部是當下狀態：團員可能隨時改單，比較兩次結果前不要推論誰新增了什麼。
 
 ## 取餐方式
 

@@ -108,6 +108,18 @@ async def leader_address() -> dict[str, Any]:
     return {"address": address.get("address"), "note": address.get("loc_name") or ""}
 
 
+async def sold_out(group_id: str) -> dict[str, Any]:
+    """這個團的店家現在什麼賣完了。Ocard 團鎖定時也查得到。"""
+    try:
+        session = dependencies.get_cart_store().get_session(group_id)
+    except KeyError as exc:
+        raise ToolError("找不到這個團。") from exc
+    if session.provider == "ocard":
+        target = target_from_session(session.store_id, session.group_buy_code)
+        return await dependencies.get_ocard_client().list_sold_out(target)
+    return await dependencies.get_nidin_client().list_disabled_items(session.store_id)
+
+
 async def remove(group_id: str) -> dict[str, Any]:
     """只刪本站紀錄，平台上的團不受影響。"""
     principal = _principal()
@@ -168,6 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     paid.add_argument("--unpaid", action="store_true", help="改回未收款")
     commands.add_parser("remove", help="從本站移除團（不影響平台）").add_argument("group_id")
     commands.add_parser("leader-address", help="主揪在 Nidin 的預設外送地址（填 Ocard 用）")
+    commands.add_parser("sold-out", help="這個團的店家現在售完什麼（Nidin／Ocard）").add_argument("group_id")
     return parser
 
 
@@ -180,6 +193,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         return await remove(args.group_id)
     if args.command == "leader-address":
         return await leader_address()
+    if args.command == "sold-out":
+        return await sold_out(args.group_id)
 
     principal = _principal()
     if args.command == "groups":

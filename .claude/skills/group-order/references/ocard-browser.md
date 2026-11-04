@@ -16,6 +16,16 @@ Ocard 開團要團長本人的帳號，之後才能用那個帳號結帳。未�
 7. `import <連結>` 加進本站，再 `status <group_id>`。`has_delivery_address` 要是 `true`，選外送時沒補到地址就不算開完，要明確告訴使用者。
 8. 回報揪團連結、距離、運費（`status` 有地址後 Ocard 才算得出來，以結帳頁為準）。關掉分頁。
 
+## 解鎖（團長鎖定後要追加）
+
+已實測兩次。團長按「結帳揪團訂購」後團會鎖定，可以這樣重新開放：
+
+1. 開 `https://order.ocard.co/<品牌>/<分店>/<團長單號>?group=<團碼>`。團長單號在開團時回傳，或開店家頁看 `$store.state.currentOrder.id`。
+2. 按「再開揪團」，沒有確認視窗，頁面會立刻換頁，所以 `javascript_exec` 可能回 `Inspected target navigated`，這不代表失敗。
+3. 用 `status <group_id>` 確認 `open: true`，再回報揪團連結。
+
+已付款的團解不開。使用者正在付款時不要解鎖。
+
 ## 踩過的坑
 
 - **分頁在背景時**，截圖會逾時、座標點擊沒反應（`document.visibilityState` 是 `hidden`）。用 `javascript_exec` 找元素再 `.click()`，或請使用者把分頁切到前面。

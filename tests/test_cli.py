@@ -2,13 +2,14 @@
 
 import json
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qsl
 
 import httpx
 import pytest
 
 from app import cli
 from app.nidin import NidinClient
-from app.ocard import OcardClient
+from app.ocard import OcardClient, OcardTarget
 from tests.fixtures_ocard import OCARD_GROUP
 from tests.test_ocard import GREEN_LINE, _ocard
 
@@ -99,6 +100,41 @@ def test_leader_address_picks_the_first_usable_nidin_address(authenticated_manag
     patches = [patch.object(NidinClient, "list_delivery_addresses", new=AsyncMock(return_value=addresses[:1]))]
     code, body = _run(capsys, "leader-address", patches=patches)
     assert code == 1 and "沒有可用" in body["error"]
+
+
+@pytest.mark.anyio
+async def test_ocard_sold_out_works_without_a_group_code_and_skips_unavailable_items():
+    target = OcardTarget("teabrand", "Store01", "GRP0001")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        form = dict(parse_qsl(request.content.decode()))
+        assert "group" not in form  # 團鎖定時帶團碼會被整個拒絕
+        path = request.url.path
+        if path.endswith("registerDevice"):
+            return httpx.Response(200, json={"code": 500, "data": {"dtk": "D"}})
+        if path.endswith("menu/get"):
+            return httpx.Response(200, json={"code": 500, "data": {"products": [{"items": [
+                {"id": "a", "name": "珍珠", "soldOut": True},
+                {"id": "b", "name": "奶茶", "soldOut": False},
+                {"id": "c", "name": "下架品", "soldOut": False},
+            ]}]}})
+        if form["item_id"] == "c":
+            return httpx.Response(200, json={"code": 400, "msg": "目前不提供此商品"})
+        return httpx.Response(200, json={"code": 500, "data": {"adds": [{"options": [
+            {"name": "珍珠", "soldOut": True},
+            {"name": "茶凍", "soldOut": False},
+        ]}]}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        result = await OcardClient(client=http).list_sold_out(target)
+    assert result == {"products": ["珍珠"], "options": ["珍珠"]}
+
+
+def test_sold_out_command_dispatches_by_platform(ocard_session_id, capsys):
+    sold = AsyncMock(return_value={"products": ["珍珠"], "options": []})
+    with patch.object(OcardClient, "list_sold_out", new=sold):
+        code, body = _run(capsys, "sold-out", ocard_session_id)
+    assert code == 0 and body["products"] == ["珍珠"]
 
 
 def test_remove_only_deletes_the_local_group(ocard_session_id, capsys):

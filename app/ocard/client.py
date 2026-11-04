@@ -162,6 +162,47 @@ class OcardClient:
         _menu_cache[key] = (time.monotonic(), menu)
         return menu
 
+    async def list_sold_out(self, target: OcardTarget, *, order_type: str = "PICKUP") -> dict[str, list[str]]:
+        """店家目前售完的品項與加料。不帶團碼查，所以團鎖定時也查得到（帶團碼會直接被拒絕）。"""
+        dtk = await self.register_device(OcardTarget(target.brand_id, target.store_id, ""))
+        async with self._get_client() as http:
+            data = await self._post(
+                "menu/get", {"store_id": target.store_id, "orderType": order_type}, dtk=dtk, client=http
+            )
+            items = {
+                str(item["id"]): item
+                for category in data.get("products") or []
+                for item in category.get("items") or []
+                if item.get("id")
+            }
+            limit = asyncio.Semaphore(ITEM_FETCH_CONCURRENCY)
+
+            async def fetch_detail(menu_id: str) -> dict[str, Any]:
+                async with limit:
+                    try:
+                        return await self._post("menu/item", {
+                            "brand_id": target.brand_id,
+                            "store_id": target.store_id,
+                            "item_id": menu_id,
+                        }, dtk=dtk, client=http)
+                    except OcardApiError:
+                        # 售完的品項連規格都查不到（回「目前不提供此商品」），不算錯誤
+                        return {}
+
+            available = [menu_id for menu_id, item in items.items() if not item.get("soldOut")]
+            details = await asyncio.gather(*(fetch_detail(menu_id) for menu_id in available))
+        options = {
+            str(option.get("name"))
+            for detail in details
+            for add in detail.get("adds") or []
+            for option in add.get("options") or []
+            if option.get("soldOut") or option.get("unavailable")
+        }
+        return {
+            "products": sorted({str(item.get("name")) for item in items.values() if item.get("soldOut")}),
+            "options": sorted(options),
+        }
+
     async def join_group(self, target: OcardTarget, *, dtk: str, name: str) -> str:
         data = await self._post("group/join", {
             "group": target.group_code,
