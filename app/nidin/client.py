@@ -39,6 +39,8 @@ from app.parser import parse_order_lines
 
 
 NIDIN_API_BASE_URL = "https://loctw-service-api.nidin.shop/shopper/v2"
+# Nidin 慢的時候單次要 8～15 秒；太早放棄會讓已經開成的團或已送出的單被回報成失敗
+NIDIN_REQUEST_TIMEOUT_SECONDS = 30.0
 
 
 BROWSER_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.0.0 Safari/537.36"
@@ -137,7 +139,7 @@ class NidinClient:
             yield self._client
             return
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=NIDIN_REQUEST_TIMEOUT_SECONDS) as client:
             yield client
 
     def _headers(self, *, token: str | None = None, user_id: int | str | None = None) -> dict[str, str]:
